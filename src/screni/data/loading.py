@@ -550,11 +550,11 @@ def plot_pbmc_diagnostics(
     # --- QC violin plots ---
     fig, axes = plt.subplots(1, 3, figsize=(24, 7))
     sc.pl.violin(rna, keys="n_genes_by_counts", groupby=plot_col,
-                 ax=axes[0], show=False)
+                 ax=axes[0], show=False, rotation=90)
     sc.pl.violin(rna, keys="total_counts", groupby=plot_col,
-                 ax=axes[1], show=False)
+                 ax=axes[1], show=False, rotation=90)
     sc.pl.violin(rna, keys="pct_counts_mt", groupby=plot_col,
-                 ax=axes[2], show=False)
+                 ax=axes[2], show=False, rotation=90)
     fig.tight_layout()
     fig.savefig(output_dir / "pbmc_qc_violin.png", dpi=150)
     logger.info(f"  Saved {output_dir / 'pbmc_qc_violin.png'}")
@@ -578,7 +578,7 @@ def plot_pbmc_diagnostics(
     try:
         import muon as mu
         mu.atac.pp.tfidf(atac_work)
-        mu.atac.tl.lsi(atac_work, n_components=30)
+        mu.atac.tl.lsi(atac_work, n_comps=30)
         # Drop first LSI component (depth-correlated)
         atac_work.obsm["X_lsi"] = atac_work.obsm["X_lsi"][:, 1:]
         sc.pp.neighbors(atac_work, use_rep="X_lsi", n_neighbors=10)

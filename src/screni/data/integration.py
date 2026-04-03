@@ -449,7 +449,7 @@ def integrate_paired(
     logger.info("  ATAC preprocessing...")
     atac_proc = atac.copy()
     mu.atac.pp.tfidf(atac_proc)
-    mu.atac.tl.lsi(atac_proc, n_components=n_lsi + 1)
+    mu.atac.tl.lsi(atac_proc, n_comps=n_lsi + 1)
     # Remove first LSI component (depth-correlated)
     atac_proc.obsm["X_lsi"] = atac_proc.obsm["X_lsi"][:, 1:]
     sc.pp.neighbors(atac_proc, use_rep="X_lsi", n_neighbors=n_neighbors)
