@@ -131,7 +131,7 @@ intergenic       666
     GSE181251_Single_Cell_ATACseq_cell_annotation.txt.gz              3.1 MB
     GSE181251_Single_Cell_ATACseq_peak_annotation.txt.gz              2.3 MB
     GSE181251_Single_Cell_ATACseq_raw_matrix.mtx.gz                1105.0 MB
-    data                                                              0.0 MB
+    scRNAseq_clark2019                                                0.0 MB
 
   --- Single Cell ATACseq (developmental timepoints) ---
   Reading GSE181251_Single_Cell_ATACseq_raw_matrix.mtx.gz ...
@@ -162,7 +162,43 @@ intergenic       666
 
   Saved: output/data_inspection/retinal_dataset_sizes.png
 
-  [SKIP] data/retinal_GSE181251/scRNAseq_clark2019 not found
+============================================================
+  Retinal scRNA-seq (Clark et al. 2019)
+============================================================
+
+  Files in scRNAseq_clark2019/:
+    10x_mouse_retina_development.mtx                               1620.2 MB
+    10x_mouse_retina_development_featureData.csv                      3.2 MB
+    10x_mouse_retina_development_phenoData.csv                      164.4 MB
+    10x_mouse_retina_pData_umap2_CellType_annot_w_horiz.csv         146.8 MB
+
+  --- Cell Annotations (updated, with horizontal cells) ---
+  Shape: (107052, 94)
+  Columns: ['barcode', 'sample', 'age', 'Size_Factor', 'num_genes_expressed', 'Total_mRNAs', 'umap_cluster', 'umap_coord1', 'umap_coord2', 'umap_coord3', 'used_for_pseudotime', 'pattern_match', 'Patt.1', 'Patt.2', 'Patt.3', 'Patt.4', 'Patt.5', 'Patt.6', 'Patt.7', 'Patt.8', 'Patt.9', 'Patt.10', 'Patt.11', 'Patt.12', 'Patt.13', 'Patt.14', 'Patt.15', 'Patt.16', 'Patt.17', 'Patt.18', 'Patt.19', 'Patt.20', 'Patt.21', 'Patt.22', 'Patt.23', 'Patt.24', 'Patt.25', 'Patt.26', 'Patt.27', 'Patt.28', 'Patt.29', 'Patt.30', 'Patt.31', 'Patt.32', 'Patt.33', 'Patt.34', 'Patt.35', 'Patt.36', 'Patt.37', 'Patt.38', 'Patt.39', 'Patt.40', 'Patt.41', 'Patt.42', 'Patt.43', 'Patt.44', 'Patt.45', 'Patt.46', 'Patt.47', 'Patt.48', 'Patt.49', 'Patt.50', 'Patt.51', 'Patt.52', 'Patt.53', 'Patt.54', 'Patt.55', 'Patt.56', 'Patt.57', 'Patt.58', 'Patt.59', 'Patt.60', 'Patt.61', 'Patt.62', 'Patt.63', 'Patt.64', 'Patt.65', 'Patt.66', 'Patt.67', 'Patt.68', 'Patt.69', 'Patt.70', 'Patt.71', 'Patt.72', 'Patt.73', 'Patt.74', 'Patt.75', 'Patt.76', 'Patt.77', 'Patt.78', 'Patt.79', 'Patt.80', 'umap2_CellType', 'old_CellType_annot']
+
+  Timepoints (10):
+    E14          24,206
+    E18          20,578
+    P2           15,582
+    P8           10,200
+    P0            8,873
+    E11           8,301
+    P14           7,680
+    P5            5,366
+    E16           4,763
+    E12           1,503
+
+  --- Feature Annotations ---
+  Shape: (27998, 7)
+  Columns: ['id', 'gene_short_name', 'num_cells_expressed', 'mean_expr', 'sd_exprs', 'bcv', 'percent_detection']
+  Total genes: 27998
+  Genes detected in >=1 cell: 21421
+
+  --- Count Matrix ---
+  Reading 10x_mouse_retina_development.mtx (this may take a while) ...
+  Shape: (27998, 107052)
+  Sparsity: 96.00% zeros
+  Non-zero entries: 119,864,270
 
 ============================================================
   Done
