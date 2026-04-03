@@ -1,7 +1,7 @@
 """Phase 0: Load retinal and PBMC datasets into AnnData objects.
 
-Loads raw count matrices and cell annotations, filters to the cell types
-used in the ScReNI paper, and saves as .h5ad files.
+Loads raw count matrices and cell annotations, applies QC filtering,
+annotates cell types, and saves as .h5ad files with diagnostic plots.
 
 Retinal (unpaired):
     scATAC-seq: GSE181251 (Lyu et al. 2021) - 94,318 cells, 283,847 peaks
@@ -9,6 +9,13 @@ Retinal (unpaired):
 
 PBMC 10X Multiome (paired):
     12,012 cells with both Gene Expression (36,601 genes) and ATAC Peaks (111,857)
+
+PBMC cell type annotation:
+    The ScReNI paper uses Seurat reference-based label transfer for PBMC
+    annotation, but provides no code for this step. We use CellTypist
+    (Immune_All_Low.pkl model) as the Python equivalent, followed by a
+    manual mapping from CellTypist fine-grained labels to the 8 ScReNI types.
+    See CELLTYPIST_TO_SCRENI for the mapping.
 """
 
 import logging
@@ -45,6 +52,21 @@ PBMC_CELL_TYPES = [
     "Treg",
 ]
 
+# Mapping from CellTypist Immune_All_Low labels to ScReNI paper types.
+# Determined by inspecting CellTypist output on UMAP and matching clusters
+# to the 8 types from the paper. Only 1:1 mappings - subtypes not used
+# by the paper (e.g., Tem/Temra, MAIT, Naive B, pDC) are dropped.
+CELLTYPIST_TO_SCRENI = {
+    "Classical monocytes": "CD14 monocyte",
+    "Non-classical monocytes": "CD16 monocyte",
+    "Tcm/Naive helper T cells": "CD4 naive cell",
+    "Tcm/Naive cytotoxic T cells": "CD8 naive cell",
+    "DC2": "cDC",
+    "Memory B cells": "Memory B cell",
+    "CD16+ NK cells": "NK",
+    "Regulatory T cells": "Treg",
+}
+
 # Expected cell counts from the paper (Table / Results section)
 EXPECTED_COUNTS = {
     "retinal_rna": {"RPC1": 7853, "RPC2": 16645, "RPC3": 22943, "MG": 936},
@@ -75,7 +97,7 @@ def _check_counts(adata: ad.AnnData, expected: dict, name: str) -> None:
     if not all_match:
         logger.warning(
             f"  {name}: cell counts do not match paper exactly. "
-            "This may be due to timepoint filtering differences."
+            "This may be due to annotation or timepoint differences."
         )
 
 
@@ -140,11 +162,8 @@ def load_retinal_atac(
 
     # Peak names as var index
     # The peak annotation file has a single column header that IS the first peak name
-    # Build peak names from the annotation
     peak_names = [peaks.columns[0]] + peaks.iloc[:, 0].tolist()
-    # Standardize peak names: replace any chr1-start-end with chr1:start-end
-    peak_names = [p.replace("-", ":", 1).replace("-", "-") for p in peak_names]
-    # Actually the format is chr1-start-end, standardize to chr1:start-end
+    # Standardize peak names: chr1-start-end → chr1:start-end
     standardized = []
     for p in peak_names:
         parts = p.split("-")
@@ -313,7 +332,6 @@ def load_retinal_rna(
 
     # NOTE: Final cell type labels (RPC1/2/3/MG) are NOT assigned here.
     # They come from ATAC data after integration via match_rna_atac_neighbors().
-    # See REVIEW_NOTES.md for details.
 
     return adata
 
@@ -379,21 +397,22 @@ def annotate_pbmc_cell_types(
     reference. CellTypist is the Python equivalent: a pre-trained logistic
     regression model on the same immune cell atlas data.
 
-    The model produces fine-grained immune subtypes which we then map to
-    the 8 cell types used in the ScReNI paper.
+    The model produces fine-grained immune subtypes which are stored in
+    ``.obs['cell_type_celltypist']``. These are then mapped to the 8 ScReNI
+    paper types via ``CELLTYPIST_TO_SCRENI`` and stored in ``.obs['cell_type']``.
+    Cells that don't map to any of the 8 types get NaN.
 
     Parameters
     ----------
     rna
         Raw RNA AnnData from ``load_pbmc()``.
     model_name
-        CellTypist model to use. ``"Immune_All_Low.pkl"`` gives fine-grained
-        types comparable to Seurat's ``celltype.l2``.
+        CellTypist model to use.
 
     Returns
     -------
-    AnnData with ``.obs['cell_type']`` and ``.obs['cell_type_fine']`` added.
-    The ``.X`` contains raw counts.
+    AnnData with ``.obs['cell_type']``, ``.obs['cell_type_celltypist']``.
+    ``.X`` contains raw counts.
     """
     try:
         import celltypist
@@ -406,7 +425,7 @@ def annotate_pbmc_cell_types(
 
     adata = rna.copy()
 
-    # CellTypist needs log-normalized data
+    # CellTypist needs log1p-normalized data (target_sum=1e4)
     adata.layers["counts"] = adata.X.copy()
     sc.pp.normalize_total(adata, target_sum=1e4)
     sc.pp.log1p(adata)
@@ -423,22 +442,137 @@ def annotate_pbmc_cell_types(
         model = models.Model.load(model=model_name)
     predictions = celltypist.annotate(adata, model=model, majority_voting=True)
 
-    # Store CellTypist labels directly - no mapping yet.
-    # We'll inspect the UMAP first to decide how to merge labels.
-    adata.obs["cell_type"] = predictions.predicted_labels["majority_voting"]
+    # Store CellTypist fine-grained labels
+    adata.obs["cell_type_celltypist"] = predictions.predicted_labels["majority_voting"]
     logger.info(
-        f"  CellTypist types: {adata.obs['cell_type'].nunique()} unique"
+        f"  CellTypist types: {adata.obs['cell_type_celltypist'].nunique()} unique\n"
+        f"  Counts:\n{adata.obs['cell_type_celltypist'].value_counts().to_string()}"
     )
-    logger.info(
-        f"  Cell type counts:\n"
-        f"{adata.obs['cell_type'].value_counts().to_string()}"
+
+    # Map to ScReNI 8 types (unmapped → NaN)
+    adata.obs["cell_type"] = adata.obs["cell_type_celltypist"].map(
+        CELLTYPIST_TO_SCRENI
     )
+    n_mapped = adata.obs["cell_type"].notna().sum()
+    logger.info(f"  Mapped {n_mapped}/{adata.n_obs} cells to ScReNI types")
 
     # Restore raw counts
     adata.X = adata.layers["counts"]
     del adata.layers["counts"]
 
     return adata
+
+
+def qc_filter(
+    adata: ad.AnnData,
+    min_genes: int = 200,
+    max_genes: int = 4500,
+    max_pct_mt: float = 15.0,
+) -> ad.AnnData:
+    """Standard QC filtering on gene counts and mitochondrial percentage.
+
+    Parameters
+    ----------
+    adata
+        AnnData with raw counts. Must have gene symbols as var_names.
+    min_genes
+        Minimum genes detected per cell.
+    max_genes
+        Maximum genes detected per cell.
+    max_pct_mt
+        Maximum percentage of mitochondrial counts.
+
+    Returns
+    -------
+    Filtered AnnData (copy). QC metrics are stored in ``.obs``.
+    """
+    adata = adata.copy()
+    adata.var["mt"] = adata.var_names.str.startswith("MT-")
+    sc.pp.calculate_qc_metrics(adata, qc_vars=["mt"], inplace=True)
+
+    n_before = adata.n_obs
+    mask = (
+        (adata.obs["n_genes_by_counts"] > min_genes)
+        & (adata.obs["n_genes_by_counts"] < max_genes)
+        & (adata.obs["pct_counts_mt"] < max_pct_mt)
+    )
+    adata = adata[mask].copy()
+    logger.info(
+        f"  QC filter: {n_before} → {adata.n_obs} cells "
+        f"({n_before - adata.n_obs} removed)"
+    )
+    return adata
+
+
+# =========================================================================
+#  Diagnostic plots
+# =========================================================================
+
+
+def plot_pbmc_diagnostics(adata: ad.AnnData, output_dir: Path) -> None:
+    """Generate QC violin plots and UMAP for PBMC data.
+
+    Parameters
+    ----------
+    adata
+        PBMC RNA AnnData with ``cell_type_celltypist`` and QC metrics in obs.
+    output_dir
+        Directory for output PNGs.
+    """
+    import matplotlib
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+
+    output_dir = Path(output_dir)
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    # Ensure QC metrics exist
+    if "n_genes_by_counts" not in adata.obs.columns:
+        adata.var["mt"] = adata.var_names.str.startswith("MT-")
+        sc.pp.calculate_qc_metrics(adata, qc_vars=["mt"], inplace=True)
+
+    # Use CellTypist labels for plots (more informative than mapped labels)
+    plot_col = "cell_type_celltypist" if "cell_type_celltypist" in adata.obs.columns else "cell_type"
+
+    # --- QC violin plots ---
+    fig, axes = plt.subplots(1, 3, figsize=(24, 7))
+    sc.pl.violin(adata, keys="n_genes_by_counts", groupby=plot_col,
+                 ax=axes[0], show=False)
+    sc.pl.violin(adata, keys="total_counts", groupby=plot_col,
+                 ax=axes[1], show=False)
+    sc.pl.violin(adata, keys="pct_counts_mt", groupby=plot_col,
+                 ax=axes[2], show=False)
+    fig.tight_layout()
+    fig.savefig(output_dir / "pbmc_qc_violin.png", dpi=150)
+    logger.info(f"  Saved {output_dir / 'pbmc_qc_violin.png'}")
+    plt.close(fig)
+
+    # --- UMAP ---
+    # Use same params as CellTypist's internal graph (2500 HVGs, 50 PCs, k=10)
+    work = adata.copy()
+    sc.pp.normalize_total(work, target_sum=1e4)
+    sc.pp.log1p(work)
+    sc.pp.highly_variable_genes(work, n_top_genes=2500)
+    work_hvg = work[:, work.var["highly_variable"]].copy()
+    sc.pp.scale(work_hvg, max_value=10)
+    sc.tl.pca(work_hvg, n_comps=50)
+    sc.pp.neighbors(work_hvg, n_neighbors=10, n_pcs=50)
+    sc.tl.umap(work_hvg)
+    adata.obsm["X_umap"] = work_hvg.obsm["X_umap"]
+
+    # Two-panel UMAP: mapped ScReNI types (filtered) + all CellTypist labels
+    fig, axes = plt.subplots(1, 2, figsize=(22, 8))
+
+    adata_mapped = adata[adata.obs["cell_type"].notna()].copy()
+    sc.pl.umap(adata_mapped, color="cell_type", ax=axes[0], show=False,
+               title="ScReNI types (mapped, QC filtered)")
+    sc.pl.umap(adata, color=plot_col, ax=axes[1], show=False,
+               title="CellTypist labels (all)")
+
+    fig.tight_layout()
+    fig.savefig(output_dir / "pbmc_celltypes_umap.png", dpi=150)
+    logger.info(f"  Saved {output_dir / 'pbmc_celltypes_umap.png'}")
+    plt.close(fig)
 
 
 # =========================================================================
@@ -463,18 +597,21 @@ def get_shared_timepoints(
 def load_and_save_all(
     data_root: Path,
     output_dir: Path,
+    plot_dir: Path | None = None,
 ) -> dict[str, ad.AnnData]:
-    """Load all datasets, apply filters, and save as .h5ad.
+    """Load all datasets, apply QC + annotation, save as .h5ad with plots.
 
-    For retinal data, the correct pipeline order is:
-    1. Load RNA with Clark 2019 labels (no final cell type filter)
-    2. Load ATAC with Lyu 2021 labels (filter to RPC1/2/3/MG)
-    3. Filter both to shared timepoints
-    4. Save both as h5ad
+    Pipeline order:
+    1. Load retinal RNA (Clark labels, no final cell type filter)
+    2. Load retinal ATAC (filter to RPC1/2/3/MG)
+    3. Filter both to shared timepoints, save
+    4. Load PBMC, annotate with CellTypist, QC filter
+    5. Map to ScReNI types, filter to mapped cells, save
+    6. Generate diagnostic plots
 
-    Final RNA cell type labels (RPC1/2/3/MG) are assigned LATER during
-    integration (Phase 1) by transferring ATAC labels via nearest-neighbor
-    matching. See integration.match_rna_atac_neighbors().
+    Final retinal RNA cell type labels (RPC1/2/3/MG) are assigned LATER
+    during integration (Phase 1) by transferring ATAC labels via
+    nearest-neighbor matching. See integration.match_rna_atac_neighbors().
 
     Parameters
     ----------
@@ -482,13 +619,15 @@ def load_and_save_all(
         Root data directory (e.g., ``data/``).
     output_dir
         Where to save processed .h5ad files (e.g., ``data/processed/``).
-
-    Returns
-    -------
-    Dict with keys 'retinal_atac', 'retinal_rna', 'pbmc_rna', 'pbmc_atac'.
+    plot_dir
+        Where to save diagnostic plots. Defaults to ``output/data_inspection/``.
     """
     output_dir = Path(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
+    if plot_dir is None:
+        plot_dir = Path("output/data_inspection")
+    plot_dir = Path(plot_dir)
+    plot_dir.mkdir(parents=True, exist_ok=True)
     results = {}
 
     # --- Retinal ---
@@ -537,8 +676,6 @@ def load_and_save_all(
             )
 
     # Save retinal data
-    # NOTE: RNA has Clark labels, NOT final ScReNI labels. RNA cell type
-    # count checks happen after integration (Phase 1).
     if rna_full is not None:
         rna_full.write_h5ad(output_dir / "retinal_rna.h5ad")
         results["retinal_rna"] = rna_full
@@ -556,10 +693,28 @@ def load_and_save_all(
     pbmc_dir = Path(data_root) / "pbmc_unsorted_10k"
     if pbmc_dir.exists():
         pbmc_rna, pbmc_atac = load_pbmc(pbmc_dir)
+
+        # Annotate with CellTypist
         pbmc_rna = annotate_pbmc_cell_types(pbmc_rna)
 
-        # Keep all CellTypist labels for now - no filtering.
-        # We'll inspect UMAPs first, then decide how to merge to 8 ScReNI types.
+        # QC filter
+        logger.info("  Applying QC filter to PBMC...")
+        pbmc_rna = qc_filter(pbmc_rna)
+        pbmc_atac = pbmc_atac[pbmc_rna.obs_names].copy()
+
+        # Generate diagnostic plots (before dropping unmapped cells)
+        logger.info("  Generating PBMC diagnostic plots...")
+        plot_pbmc_diagnostics(pbmc_rna, plot_dir)
+
+        # Filter to mapped ScReNI cell types only
+        mask = pbmc_rna.obs["cell_type"].notna()
+        pbmc_rna = pbmc_rna[mask].copy()
+        pbmc_atac = pbmc_atac[mask].copy()
+        logger.info(
+            f"  PBMC after mapping to ScReNI types: {pbmc_rna.n_obs} cells "
+            f"({(~mask).sum()} unmapped dropped)"
+        )
+        _check_counts(pbmc_rna, EXPECTED_COUNTS["pbmc"], "pbmc")
 
         # Transfer cell type to ATAC (paired data, same cells)
         pbmc_atac.obs["cell_type"] = pbmc_rna.obs["cell_type"].values
