@@ -89,7 +89,7 @@ wget -nc "${BASE_URL}/GSE181251_P2_Nfi_peaks.txt.gz"
 #  120,804 cells, 10 timepoints (E11-P14), 10X Chromium 3' v2
 # ===========================================================================
 
-SCRNA_DIR="${OUTDIR:-.}/scRNAseq_clark2019"
+SCRNA_DIR="scRNAseq_clark2019"
 mkdir -p "$SCRNA_DIR"
 
 # Count matrix (MTX format)
