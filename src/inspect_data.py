@@ -300,6 +300,83 @@ def inspect_retinal():
         print(f"\n  Saved: {OUT_DIR / 'retinal_dataset_sizes.png'}")
         plt.close(fig)
 
+    # --- Developmental scRNA-seq (Clark et al. 2019) ---
+    scrna_dir = ret_dir / "scRNAseq_clark2019"
+    if not scrna_dir.exists():
+        print(f"\n  [SKIP] {scrna_dir} not found")
+        return
+
+    section("Retinal scRNA-seq (Clark et al. 2019)")
+
+    # List files
+    files = sorted(scrna_dir.glob("*"))
+    print(f"  Files in {scrna_dir.name}/:")
+    for f in files:
+        size_mb = f.stat().st_size / 1e6
+        print(f"    {f.name:60s} {size_mb:8.1f} MB")
+
+    # Cell annotations
+    annot_path = scrna_dir / "10x_mouse_retina_pData_umap2_CellType_annot_w_horiz.csv"
+    if annot_path.exists():
+        cells_rna = pd.read_csv(annot_path, index_col=0)
+        print(f"\n  --- Cell Annotations (updated, with horizontal cells) ---")
+        print(f"  Shape: {cells_rna.shape}")
+        print(f"  Columns: {list(cells_rna.columns)}")
+
+        if "umap_CellType" in cells_rna.columns:
+            ct_counts = cells_rna["umap_CellType"].value_counts()
+            print(f"\n  umap_CellType ({ct_counts.shape[0]} types):")
+            for ct, n in ct_counts.items():
+                print(f"    {ct:30s} {n:>8,}")
+
+        if "age" in cells_rna.columns:
+            age_counts = cells_rna["age"].value_counts()
+            print(f"\n  Timepoints ({age_counts.shape[0]}):")
+            for age, n in age_counts.items():
+                print(f"    {age:10s} {n:>8,}")
+
+        # Plot cell type distribution
+        if "umap_CellType" in cells_rna.columns:
+            fig, axes = plt.subplots(1, 2, figsize=(16, 6))
+
+            cells_rna["umap_CellType"].value_counts().plot.barh(ax=axes[0])
+            axes[0].set_title("Retinal scRNA-seq: cell types (umap_CellType)")
+            axes[0].set_xlabel("Number of cells")
+
+            cells_rna["age"].value_counts().sort_index().plot.bar(ax=axes[1])
+            axes[1].set_title("Retinal scRNA-seq: cells per timepoint")
+            axes[1].set_ylabel("Number of cells")
+
+            plt.tight_layout()
+            fig.savefig(OUT_DIR / "retinal_scrnaseq_overview.png", dpi=150)
+            print(f"\n  Saved: {OUT_DIR / 'retinal_scrnaseq_overview.png'}")
+            plt.close(fig)
+
+    # Gene/feature annotations
+    feat_path = scrna_dir / "10x_mouse_retina_development_featureData.csv"
+    if feat_path.exists():
+        features_rna = pd.read_csv(feat_path, index_col=0)
+        print(f"\n  --- Feature Annotations ---")
+        print(f"  Shape: {features_rna.shape}")
+        print(f"  Columns: {list(features_rna.columns)}")
+        if "gene_short_name" in features_rna.columns:
+            n_detected = (features_rna["num_cells_expressed"] > 0).sum()
+            print(f"  Total genes: {features_rna.shape[0]}")
+            print(f"  Genes detected in >=1 cell: {n_detected}")
+
+    # Count matrix
+    mtx_path = scrna_dir / "10x_mouse_retina_development.mtx"
+    if mtx_path.exists():
+        print(f"\n  --- Count Matrix ---")
+        print(f"  Reading {mtx_path.name} (this may take a while) ...")
+        mat_rna = sio.mmread(str(mtx_path))
+        print(f"  Shape: {mat_rna.shape}")
+        if sp.issparse(mat_rna):
+            nnz = mat_rna.nnz
+            total = mat_rna.shape[0] * mat_rna.shape[1]
+            print(f"  Sparsity: {1 - nnz / total:.2%} zeros")
+            print(f"  Non-zero entries: {nnz:,}")
+
 
 # =============================================================================
 #  Main
