@@ -131,6 +131,7 @@ intergenic       666
     GSE181251_Single_Cell_ATACseq_cell_annotation.txt.gz              3.1 MB
     GSE181251_Single_Cell_ATACseq_peak_annotation.txt.gz              2.3 MB
     GSE181251_Single_Cell_ATACseq_raw_matrix.mtx.gz                1105.0 MB
+    data                                                              0.0 MB
 
   --- Single Cell ATACseq (developmental timepoints) ---
   Reading GSE181251_Single_Cell_ATACseq_raw_matrix.mtx.gz ...
@@ -160,6 +161,8 @@ intergenic       666
   P14 KO scATAC-seq                          283,847 x   22,705
 
   Saved: output/data_inspection/retinal_dataset_sizes.png
+
+  [SKIP] data/retinal_GSE181251/scRNAseq_clark2019 not found
 
 ============================================================
   Done

@@ -1,0 +1,53 @@
+Downloading PBMC 10X Multiome data to /tudelft.net/staff-umbrella/ScReNI/bsc-screni/data/pbmc_unsorted_10k
+Started: Fri Apr  3 13:52:34 CEST 2026
+  % Total    % Received % Xferd  Average Speed   Time    Time     Time  Current
+                                 Dload  Upload   Total   Spent    Left  Speed
+  0     0    0     0    0     0      0      0 --:--:-- --:--:-- --:--:--     0  0  144M    0   748    0     0    920      0 45:47:32 --:--:-- 45:47:32   920  0  144M    0  172k    0     0   140k      0  0:17:35  0:00:01  0:17:34  140k  9  144M    9 13.5M    0     0  6240k      0  0:00:23  0:00:02  0:00:21 6239k 27  144M   27 40.4M    0     0  12.5M      0  0:00:11  0:00:03  0:00:08 12.5M 47  144M   47 68.6M    0     0  16.2M      0  0:00:08  0:00:04  0:00:04 16.2M 67  144M   67 97.1M    0     0  18.5M      0  0:00:07  0:00:05  0:00:02 21.9M 85  144M   85  123M    0     0  19.8M      0  0:00:07  0:00:06  0:00:01 24.6M100  144M  100  144M    0     0  20.7M      0  0:00:06  0:00:06 --:--:-- 27.6M
+  % Total    % Received % Xferd  Average Speed   Time    Time     Time  Current
+                                 Dload  Upload   Total   Spent    Left  Speed
+  0     0    0     0    0     0      0      0 --:--:-- --:--:-- --:--:--     0  0     0    0     0    0     0      0      0 --:--:--  0:00:01 --:--:--     0  0 2782M    0     0    0     0      0      0 --:--:--  0:00:01 --:--:--     0  0 2782M    0 15.2M    0     0  7153k      0  0:06:38  0:00:02  0:06:36 7151k  1 2782M    1 46.9M    0     0  14.7M      0  0:03:08  0:00:03  0:03:05 14.7M  2 2782M    2 80.9M    0     0  19.3M      0  0:02:23  0:00:04  0:02:19 19.3M  4 2782M    4  115M    0     0  22.3M      0  0:02:04  0:00:05  0:01:59 28.4M  5 2782M    5  148M    0     0  24.0M      0  0:01:55  0:00:06  0:01:49 33.3M  6 2782M    6  184M    0     0  25.6M      0  0:01:48  0:00:07  0:01:41 33.7M  7 2782M    7  217M    0     0  26.6M      0  0:01:44  0:00:08  0:01:36 34.1M  8 2782M    8  249M    0     0  27.2M      0  0:01:42  0:00:09  0:01:33 33.7M 10 2782M   10  280M    0     0  27.5M      0  0:01:41  0:00:10  0:01:31 32.8M 11 2782M   11  313M    0     0  28.0M      0  0:01:39  0:00:11  0:01:28 32.9M 13 2782M   13  374M    0     0  30.7M      0  0:01:30  0:00:12  0:01:18 37.9M 14 2782M   14  406M    0     0  30.8M      0  0:01:30  0:00:13  0:01:17 37.8M 15 2782M   15  437M    0     0  30.8M      0  0:01:30  0:00:14  0:01:16 37.4M 16 2782M   16  468M    0     0  30.8M      0  0:01:30  0:00:15  0:01:15 37.7M 18 2782M   18  514M    0     0  31.8M      0  0:01:27  0:00:16  0:01:11 40.2M 29 2782M   29  828M    0     0  48.2M      0  0:00:57  0:00:17  0:00:40 90.9M 41 2782M   41 1147M    0     0  63.1M      0  0:00:44  0:00:18  0:00:26  148M 53 2782M   53 1485M    0     0  77.4M      0  0:00:35  0:00:19  0:00:16  209M 63 2782M   63 1764M    0     0  87.4M      0  0:00:31  0:00:20  0:00:11  259M 72 2782M   72 2024M    0     0  95.6M      0  0:00:29  0:00:21  0:00:08  302M 83 2782M   83 2318M    0     0   104M      0  0:00:26  0:00:22  0:00:04  297M 93 2782M   93 2603M    0     0   112M      0  0:00:24  0:00:23  0:00:01  291M100 2782M  100 2782M    0     0   117M      0  0:00:23  0:00:23 --:--:--  281M
+  % Total    % Received % Xferd  Average Speed   Time    Time     Time  Current
+                                 Dload  Upload   Total   Spent    Left  Speed
+  0     0    0     0    0     0      0      0 --:--:-- --:--:-- --:--:--     0  0 1269k    0     0    0     0      0      0 --:--:-- --:--:-- --:--:--     0100 1269k  100 1269k    0     0  2020k      0 --:--:-- --:--:-- --:--:-- 2017k
+  % Total    % Received % Xferd  Average Speed   Time    Time     Time  Current
+                                 Dload  Upload   Total   Spent    Left  Speed
+  0     0    0     0    0     0      0      0 --:--:-- --:--:-- --:--:--     0  0 2609k    0   747    0     0    825      0  0:53:59 --:--:--  0:53:59   825100 2609k  100 2609k    0     0  2777k      0 --:--:-- --:--:-- --:--:-- 2776k
+  % Total    % Received % Xferd  Average Speed   Time    Time     Time  Current
+                                 Dload  Upload   Total   Spent    Left  Speed
+  0     0    0     0    0     0      0      0 --:--:-- --:--:-- --:--:--     0  0 6056k    0 18275    0     0  19615      0  0:05:16 --:--:--  0:05:16 19608100 6056k  100 6056k    0     0  3353k      0  0:00:01  0:00:01 --:--:-- 3355k
+  % Total    % Received % Xferd  Average Speed   Time    Time     Time  Current
+                                 Dload  Upload   Total   Spent    Left  Speed
+  0     0    0     0    0     0      0      0 --:--:-- --:--:-- --:--:--     0100  1826  100  1826    0     0   2376      0 --:--:-- --:--:-- --:--:--  2377
+  % Total    % Received % Xferd  Average Speed   Time    Time     Time  Current
+                                 Dload  Upload   Total   Spent    Left  Speed
+  0     0    0     0    0     0      0      0 --:--:-- --:--:-- --:--:--     0  0 85.3M    0   685    0     0    737      0 33:43:40 --:--:-- 33:43:40   737  0 85.3M    0 97980    0     0  80763      0  0:18:28  0:00:01  0:18:27 80708 12 85.3M   12 10.8M    0     0  5010k      0  0:00:17  0:00:02  0:00:15 5010k 42 85.3M   42 36.6M    0     0  11.4M      0  0:00:07  0:00:03  0:00:04 11.4M 73 85.3M   73 62.9M    0     0  14.9M      0  0:00:05  0:00:04  0:00:01 14.9M100 85.3M  100 85.3M    0     0  16.7M      0  0:00:05  0:00:05 --:--:-- 20.4M
+  % Total    % Received % Xferd  Average Speed   Time    Time     Time  Current
+                                 Dload  Upload   Total   Spent    Left  Speed
+  0     0    0     0    0     0      0      0 --:--:-- --:--:-- --:--:--     0  0     0    0     0    0     0      0      0 --:--:-- --:--:-- --:--:--     0100  172k    0  172k    0     0   151k      0 --:--:--  0:00:01 --:--:--  151k100 6115k    0 6115k    0     0  3571k      0 --:--:--  0:00:01 --:--:-- 3570k
+  % Total    % Received % Xferd  Average Speed   Time    Time     Time  Current
+                                 Dload  Upload   Total   Spent    Left  Speed
+  0     0    0     0    0     0      0      0 --:--:-- --:--:-- --:--:--     0  0  349M    0   675    0     0    612      0   6d 22h  0:00:01   6d 22h   612  0  349M    0 71331    0     0  52708      0  1:55:56  0:00:01  1:55:55 52681  3  349M    3 12.7M    0     0  5684k      0  0:01:02  0:00:02  0:01:00 5683k 11  349M   11 40.7M    0     0  12.3M      0  0:00:28  0:00:03  0:00:25 12.3M 18  349M   18 65.6M    0     0  15.1M      0  0:00:23  0:00:04  0:00:19 15.1M 27  349M   27 95.7M    0     0  17.8M      0  0:00:19  0:00:05  0:00:14 22.4M 35  349M   35  123M    0     0  19.6M      0  0:00:17  0:00:06  0:00:11 24.9M 43  349M   43  153M    0     0  20.9M      0  0:00:16  0:00:07  0:00:09 28.0M 52  349M   52  183M    0     0  21.9M      0  0:00:15  0:00:08  0:00:07 28.2M 60  349M   60  212M    0     0  22.8M      0  0:00:15  0:00:09  0:00:06 29.4M 69  349M   69  242M    0     0  23.4M      0  0:00:14  0:00:10  0:00:04 29.5M 77  349M   77  271M    0     0  24.0M      0  0:00:14  0:00:11  0:00:03 29.5M 84  349M   84  295M    0     0  23.9M      0  0:00:14  0:00:12  0:00:02 28.4M 92  349M   92  324M    0     0  24.3M      0  0:00:14  0:00:13  0:00:01 28.4M100  349M  100  349M    0     0  24.7M      0  0:00:14  0:00:14 --:--:-- 28.5M
+
+Verifying checksums...
+pbmc_unsorted_10k_filtered_feature_bc_matrix.h5: OK
+pbmc_unsorted_10k_atac_fragments.tsv.gz: OK
+pbmc_unsorted_10k_atac_fragments.tsv.gz.tbi: OK
+pbmc_unsorted_10k_atac_peaks.bed: OK
+pbmc_unsorted_10k_atac_peak_annotation.tsv: OK
+pbmc_unsorted_10k_summary.csv: OK
+pbmc_unsorted_10k_per_barcode_metrics.csv: OK
+pbmc_unsorted_10k_web_summary.html: OK
+pbmc_unsorted_10k_analysis.tar.gz: OK
+
+Done: Fri Apr  3 13:53:42 CEST 2026
+Files downloaded to: /tudelft.net/staff-umbrella/ScReNI/bsc-screni/data/pbmc_unsorted_10k
+total 3.4G
+-rwxrwxrwx. 1 timoverlaan domain users 350M Apr  3 13:53 pbmc_unsorted_10k_analysis.tar.gz
+-rwxrwxrwx. 1 timoverlaan domain users 2.8G Apr  3 13:53 pbmc_unsorted_10k_atac_fragments.tsv.gz
+-rwxrwxrwx. 1 timoverlaan domain users 1.3M Apr  3 13:53 pbmc_unsorted_10k_atac_fragments.tsv.gz.tbi
+-rwxrwxrwx. 1 timoverlaan domain users 6.0M Apr  3 13:53 pbmc_unsorted_10k_atac_peak_annotation.tsv
+-rwxrwxrwx. 1 timoverlaan domain users 2.6M Apr  3 13:53 pbmc_unsorted_10k_atac_peaks.bed
+-rwxrwxrwx. 1 timoverlaan domain users 145M Apr  3 13:52 pbmc_unsorted_10k_filtered_feature_bc_matrix.h5
+-rwxrwxrwx. 1 timoverlaan domain users  86M Apr  3 13:53 pbmc_unsorted_10k_per_barcode_metrics.csv
+-rwxrwxrwx. 1 timoverlaan domain users 1.8K Apr  3 13:53 pbmc_unsorted_10k_summary.csv
+-rwxrwxrwx. 1 timoverlaan domain users 6.0M Apr  3 13:53 pbmc_unsorted_10k_web_summary.html
