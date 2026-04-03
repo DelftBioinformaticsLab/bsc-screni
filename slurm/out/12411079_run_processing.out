@@ -1,0 +1,98 @@
+Retinal RNA cell annotations: 107052 cells
+  Columns: ['barcode', 'sample', 'age', 'Size_Factor', 'num_genes_expressed', 'Total_mRNAs', 'umap_cluster', 'umap_coord1', 'umap_coord2', 'umap_coord3', 'used_for_pseudotime', 'pattern_match', 'Patt.1', 'Patt.2', 'Patt.3', 'Patt.4', 'Patt.5', 'Patt.6', 'Patt.7', 'Patt.8', 'Patt.9', 'Patt.10', 'Patt.11', 'Patt.12', 'Patt.13', 'Patt.14', 'Patt.15', 'Patt.16', 'Patt.17', 'Patt.18', 'Patt.19', 'Patt.20', 'Patt.21', 'Patt.22', 'Patt.23', 'Patt.24', 'Patt.25', 'Patt.26', 'Patt.27', 'Patt.28', 'Patt.29', 'Patt.30', 'Patt.31', 'Patt.32', 'Patt.33', 'Patt.34', 'Patt.35', 'Patt.36', 'Patt.37', 'Patt.38', 'Patt.39', 'Patt.40', 'Patt.41', 'Patt.42', 'Patt.43', 'Patt.44', 'Patt.45', 'Patt.46', 'Patt.47', 'Patt.48', 'Patt.49', 'Patt.50', 'Patt.51', 'Patt.52', 'Patt.53', 'Patt.54', 'Patt.55', 'Patt.56', 'Patt.57', 'Patt.58', 'Patt.59', 'Patt.60', 'Patt.61', 'Patt.62', 'Patt.63', 'Patt.64', 'Patt.65', 'Patt.66', 'Patt.67', 'Patt.68', 'Patt.69', 'Patt.70', 'Patt.71', 'Patt.72', 'Patt.73', 'Patt.74', 'Patt.75', 'Patt.76', 'Patt.77', 'Patt.78', 'Patt.79', 'Patt.80', 'umap2_CellType', 'old_CellType_annot']
+Retinal RNA feature annotations: 27998 genes
+Loading RNA count matrix (this may take a while)...
+  Raw shape: (27998, 107052)
+  Transposed to cells × genes: (107052, 27998)
+/opt/app/.pixi/envs/default/lib/python3.11/site-packages/anndata/_core/anndata.py:1758: UserWarning: Variable names are not unique. To make them unique, call `.var_names_make_unique`.
+  utils.warn_names_duplicates("var")
+  AnnData shape: (107052, 27998)
+  Cell types: 11 unique, top 5: {'Early RPCs': 27856, 'Late RPCs': 24440, 'Rods': 14481, 'Neurogenic Cells': 9084, 'Amacrine Cells': 7437}
+  Available cell types (11): ['Amacrine Cells', 'Bipolar Cells', 'Cones', 'Early RPCs', 'Horizontal Cells', 'Late RPCs', 'Muller Glia', 'Neurogenic Cells', 'Photoreceptor Precursors', 'Retinal Ganglion Cells', 'Rods']
+  Pre-filtered to ['Early RPCs', 'Late RPCs', 'Muller Glia', 'Neurogenic Cells']: 107052 → 63967 cells
+Retinal ATAC cell annotations: 94318 cells
+  Columns: ['cell_id', 'celltypes', 'UMAP_1', 'UMAP_2', 'UMAP_3', 'realtime']
+Retinal ATAC peak annotations: 283846 peaks
+Loading ATAC count matrix (this may take a while)...
+  Raw shape: (283847, 94318) (peaks × cells)
+  AnnData shape: (94318, 283847)
+  Filtered to ['RPC1', 'RPC2', 'RPC3', 'MG']: 94318 → 32961 cells
+  retinal_atac RPC1: 6738 (expected 6049) [MISMATCH]
+  retinal_atac RPC2: 10966 (expected 10464) [MISMATCH]
+  retinal_atac RPC3: 11991 (expected 11912) [MISMATCH]
+  retinal_atac MG: 3266 (expected 768) [MISMATCH]
+  retinal_atac: cell counts do not match paper exactly. This may be due to timepoint filtering differences.
+  RNA timepoints: ['E11', 'E12', 'E14', 'E16', 'E18', 'P0', 'P14', 'P2', 'P5', 'P8']
+  ATAC timepoints: ['E11', 'E12', 'E14', 'E16', 'E18', 'P0', 'P11', 'P14', 'P2', 'P5', 'P8']
+  Shared: ['E11', 'E12', 'E14', 'E16', 'E18', 'P0', 'P14', 'P2', 'P5', 'P8']
+Re-filtering to 10 shared timepoints
+  Retinal RNA after timepoint filter: 63967
+  Retinal ATAC after timepoint filter: 31382
+  retinal_atac RPC1: 6737 (expected 6049) [MISMATCH]
+  retinal_atac RPC2: 10966 (expected 10464) [MISMATCH]
+  retinal_atac RPC3: 11969 (expected 11912) [MISMATCH]
+  retinal_atac MG: 1710 (expected 768) [MISMATCH]
+  retinal_atac: cell counts do not match paper exactly. This may be due to timepoint filtering differences.
+... storing 'cell_type' as categorical
+... storing 'timepoint' as categorical
+  Saved retinal_rna.h5ad: (63967, 27998) (Clark labels, pre-integration)
+... storing 'cell_type_original' as categorical
+... storing 'timepoint' as categorical
+... storing 'cell_type' as categorical
+  Saved retinal_atac.h5ad: (31382, 283847)
+Loading PBMC from pbmc_unsorted_10k_filtered_feature_bc_matrix.h5...
+/opt/app/.pixi/envs/default/lib/python3.11/site-packages/anndata/_core/anndata.py:1758: UserWarning: Variable names are not unique. To make them unique, call `.var_names_make_unique`.
+  utils.warn_names_duplicates("var")
+  Full matrix: 12012 cells × 148458 features
+  RNA:  (12012, 36601)
+  ATAC: (12012, 111857)
+  ATAC filtered to chr-prefixed peaks: 111857 → 111792
+/opt/app/.pixi/envs/default/lib/python3.11/functools.py:909: UserWarning: zero-centering a sparse array/matrix densifies it.
+  return dispatch(args[0].__class__)(*args, **kw)
+/opt/app/src/screni/data/loading.py:405: FutureWarning: In the future, the default backend for leiden will be igraph instead of leidenalg.
+
+ To achieve the future defaults please pass: flavor="igraph" and n_iterations=2.  directed must also be False to work with igraph's implementation.
+  sc.tl.leiden(adata_hvg, resolution=resolution)
+  Cluster 0: 2061 cells → CD14 monocyte (score=2.029)
+  Cluster 1: 1487 cells → CD14 monocyte (score=1.867)
+  Cluster 2: 1454 cells → CD4 naive cell (score=1.393)
+  Cluster 3: 1373 cells → CD4 naive cell (score=2.001)
+  Cluster 4: 1227 cells → CD4 naive cell (score=2.068)
+  Cluster 5: 689 cells → CD14 monocyte (score=1.589)
+  Cluster 6: 639 cells → NK (score=1.951)
+  Cluster 7: 513 cells → Memory B cell (score=1.981)
+  Cluster 8: 452 cells → Memory B cell (score=1.843)
+  Cluster 9: 448 cells → NK (score=2.763)
+  Cluster 10: 415 cells → Memory B cell (score=1.224)
+  Cluster 11: 386 cells → CD16 monocyte (score=2.135)
+  Cluster 12: 342 cells → CD14 monocyte (score=1.408)
+  Cluster 13: 222 cells → CD14 monocyte (score=1.717)
+  Cluster 14: 132 cells → CD14 monocyte (score=0.712)
+  Cluster 15: 115 cells → NK (score=1.225)
+  Cluster 16: 57 cells → Memory B cell (score=0.596)
+  Cell type counts:
+cell_type
+CD14 monocyte     4933
+CD4 naive cell    4054
+Memory B cell     1437
+NK                1202
+CD16 monocyte      386
+  PBMC filtered to 8 types: 12012 cells
+  pbmc CD14 monocyte: 4933 (expected 2812) [MISMATCH]
+  pbmc CD16 monocyte: 386 (expected 514) [MISMATCH]
+  pbmc CD4 naive cell: 4054 (expected 1419) [MISMATCH]
+  pbmc CD8 naive cell: 0 (expected 1410) [MISMATCH]
+  pbmc cDC: 0 (expected 198) [MISMATCH]
+  pbmc Memory B cell: 1437 (expected 371) [MISMATCH]
+  pbmc NK: 1202 (expected 468) [MISMATCH]
+  pbmc Treg: 0 (expected 162) [MISMATCH]
+  pbmc: cell counts do not match paper exactly. This may be due to timepoint filtering differences.
+... storing 'cell_type' as categorical
+... storing 'feature_types' as categorical
+... storing 'genome' as categorical
+... storing 'interval' as categorical
+... storing 'cell_type' as categorical
+... storing 'feature_types' as categorical
+... storing 'genome' as categorical
+  Saved pbmc_rna.h5ad: (12012, 36601)
+  Saved pbmc_atac.h5ad: (12012, 111792)
