@@ -423,64 +423,16 @@ def annotate_pbmc_cell_types(
         model = models.Model.load(model=model_name)
     predictions = celltypist.annotate(adata, model=model, majority_voting=True)
 
-    # Transfer labels
-    adata.obs["cell_type_fine"] = predictions.predicted_labels["majority_voting"]
+    # Store CellTypist labels directly - no mapping yet.
+    # We'll inspect the UMAP first to decide how to merge labels.
+    adata.obs["cell_type"] = predictions.predicted_labels["majority_voting"]
     logger.info(
-        f"  CellTypist fine-grained types: "
-        f"{adata.obs['cell_type_fine'].nunique()} unique"
+        f"  CellTypist types: {adata.obs['cell_type'].nunique()} unique"
     )
     logger.info(
-        f"  Fine-grained counts:\n"
-        f"{adata.obs['cell_type_fine'].value_counts().to_string()}"
+        f"  Cell type counts:\n"
+        f"{adata.obs['cell_type'].value_counts().to_string()}"
     )
-
-    # Map fine-grained CellTypist labels to the 8 ScReNI paper types.
-    # CellTypist Immune_All_Low labels include types like:
-    #   "Classical monocytes" → CD14 monocyte
-    #   "Non-classical monocytes" → CD16 monocyte
-    #   "CD4-positive, alpha-beta T cell" → CD4 naive cell
-    #   etc.
-    # This mapping covers known label variations; unmapped types → None.
-    celltypist_to_screni = {
-        # Monocytes
-        "Classical monocytes": "CD14 monocyte",
-        "Non-classical monocytes": "CD16 monocyte",
-        # CD4 T cells
-        "Tcm/Naive helper T cells": "CD4 naive cell",
-        # CD8 T cells
-        "Tcm/Naive cytotoxic T cells": "CD8 naive cell",
-        # DCs
-        "DC2": "cDC",
-        # B cells
-        "Memory B cells": "Memory B cell",
-        "Age-associated B cells": "Memory B cell",
-        # NK
-        "CD16+ NK cells": "NK",
-        # Treg
-        "Regulatory T cells": "Treg",
-    }
-
-    mapped = adata.obs["cell_type_fine"].map(celltypist_to_screni)
-    n_mapped = mapped.notna().sum()
-    n_total = len(mapped)
-    logger.info(f"  Mapped {n_mapped}/{n_total} cells to ScReNI types")
-
-    # Log unmapped types so we can extend the mapping
-    unmapped_types = (
-        adata.obs.loc[mapped.isna(), "cell_type_fine"]
-        .value_counts()
-    )
-    if len(unmapped_types) > 0:
-        logger.warning(
-            f"  Unmapped CellTypist types ({mapped.isna().sum()} cells):\n"
-            f"{unmapped_types.to_string()}"
-        )
-
-    adata.obs["cell_type"] = mapped
-
-    # Report final counts
-    ct_counts = adata.obs["cell_type"].value_counts()
-    logger.info(f"  Final cell type counts:\n{ct_counts.to_string()}")
 
     # Restore raw counts
     adata.X = adata.layers["counts"]
@@ -606,12 +558,8 @@ def load_and_save_all(
         pbmc_rna, pbmc_atac = load_pbmc(pbmc_dir)
         pbmc_rna = annotate_pbmc_cell_types(pbmc_rna)
 
-        # Filter to known cell types
-        mask = pbmc_rna.obs["cell_type"].isin(PBMC_CELL_TYPES)
-        pbmc_rna = pbmc_rna[mask].copy()
-        pbmc_atac = pbmc_atac[mask].copy()
-        logger.info(f"  PBMC filtered to {len(PBMC_CELL_TYPES)} types: {pbmc_rna.n_obs} cells")
-        _check_counts(pbmc_rna, EXPECTED_COUNTS["pbmc"], "pbmc")
+        # Keep all CellTypist labels for now - no filtering.
+        # We'll inspect UMAPs first, then decide how to merge to 8 ScReNI types.
 
         # Transfer cell type to ATAC (paired data, same cells)
         pbmc_atac.obs["cell_type"] = pbmc_rna.obs["cell_type"].values
