@@ -1,0 +1,96 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "bsc-screni"
+version = "0.1.0"
+description = "Python reimplementation of ScReNI: single-cell regulatory network inference from scRNA-seq and scATAC-seq data, applied to Alzheimer's disease"
+readme = "readme.md"
+requires-python = ">=3.9"
+license = {text = "MIT"}
+authors = [
+    {name = "Timo Verlaan", email = "t.verlaan@tudelft.nl"}
+]
+keywords = ["bioinformatics", "single-cell", "gene-regulatory-networks", "screni", "scanpy", "alzheimers"]
+classifiers = [
+    "Development Status :: 2 - Pre-Alpha",
+    "Intended Audience :: Science/Research",
+    "Topic :: Scientific/Engineering :: Bio-Informatics",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+]
+
+# Keep compatible with the pixi environment in container.sif
+dependencies = [
+    "anndata>=0.11.4",
+    "scanpy>=1.11.2",
+    "pandas>=2.2.3",
+    "numpy>=1.24.0",
+    "scipy>=1.11.0",
+    "seaborn>=0.13.2",
+    "openpyxl>=3.1.5",
+    "tqdm>=4.65.0",
+    "pyyaml>=6.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0",
+    "pytest-cov>=4.0",
+    "black>=23.0",
+    "ruff>=0.1.0",
+    "mypy>=1.0",
+]
+
+# [project.scripts]
+# No CLI entry points yet
+
+[tool.pytest.ini_options]
+minversion = "7.0"
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+addopts = [
+    "-v",
+    "--tb=short",
+    "--strict-markers",
+    "-ra",
+]
+markers = [
+    "integration: marks tests as integration tests requiring real data files (deselect with '-m \"not integration\"')",
+    "slow: marks tests as slow (deselect with '-m \"not slow\"')",
+]
+filterwarnings = [
+    "ignore::DeprecationWarning",
+    "ignore::PendingDeprecationWarning",
+]
+
+[tool.coverage.run]
+source = ["src"]
+omit = ["*/tests/*", "*/test_*.py"]
+
+[tool.coverage.report]
+exclude_lines = [
+    "pragma: no cover",
+    "def __repr__",
+    "raise AssertionError",
+    "raise NotImplementedError",
+    "if __name__ == .__main__.:",
+    "if TYPE_CHECKING:",
+]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+include = ["screni*"]
+
+[tool.black]
+line-length = 100
+target-version = ['py39', 'py310', 'py311']
+
+[tool.ruff]
+line-length = 100
+target-version = "py39"

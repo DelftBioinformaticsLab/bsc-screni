@@ -1,0 +1,10 @@
+# large data files untracked:
+data/
+
+# IDE
+.claude/
+.idea/
+.vscode/
+
+# Container stuff
+*.sif

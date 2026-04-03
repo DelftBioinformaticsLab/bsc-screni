@@ -1,0 +1,43 @@
+[project]
+authors = ["timoverlaan <t.verlaan@tudelft.nl>"]
+channels = ["conda-forge"]
+description = "Reproducible environment for processing the ROSMAP dataset"
+name = "rosmap-processing"
+platforms = ["win-64", "linux-64"]
+version = "0.1.3"
+
+[system-requirements]
+linux = "3.10"  # Lower for older kernel on DAIC
+# cuda = "12.4"  # (not necessary for processing)
+
+[tasks]
+# This task will be available but not run automatically
+setup-dev = "pip install -e ."
+
+[dependencies]
+ipykernel = "*"
+psutil = ">=5.9.8,<5.10.dev0"
+pandas = ">=2.2.3,<3"
+
+r-base = ">=4.2"
+r-seurat = "*"
+r-hdf5r = "*"
+r-reticulate = "*"
+r-remotes = "*"
+
+anndata = ">=0.11.4,<0.12"
+seaborn = ">=0.13.2,<0.14"
+scanpy = ">=1.11.2,<2"
+python-igraph = ">=0.11.8,<0.12"
+leidenalg = ">=0.10.2,<0.11"
+openpyxl = ">=3.1.5,<4"
+pyyaml = ">=6.0,<7"
+
+[pypi-dependencies]
+synapseclient = ">=4.7.0"
+awscli = ">=1.40.33, <2"
+pytest = ">=7.0"
+pytest-cov = ">=4.0"
+
+[target.linux-64.dependencies]
+scikit-misc = ">=0.1.4,<0.2"  # Apparently not available on windows
