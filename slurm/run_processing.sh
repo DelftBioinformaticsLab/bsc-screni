@@ -20,5 +20,5 @@ apptainer exec --writable-tmpfs --pwd /opt/app --containall \
   --bind data/:/opt/app/data/ \
   --bind output/:/opt/app/output/ \
   --env PYTHONPATH=/opt/app/src \
-  container_0-1-1.sif pixi run --manifest-path /opt/app/pixi.toml \
+  container_0-1-2.sif pixi run --manifest-path /opt/app/pixi.toml \
   python -m screni.data.loading

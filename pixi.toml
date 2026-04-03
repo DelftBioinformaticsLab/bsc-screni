@@ -11,19 +11,13 @@ linux = "3.10"  # Lower for older kernel on DAIC
 # cuda = "12.4"  # (not necessary for processing)
 
 [tasks]
-# This task will be available but not run automatically
 setup-dev = "pip install -e ."
+process = { cmd = "python -m screni.data.loading", env = { PYTHONPATH = "src" } }
 
 [dependencies]
 ipykernel = "*"
 psutil = ">=5.9.8,<5.10.dev0"
 pandas = ">=2.2.3,<3"
-
-r-base = ">=4.2"
-r-seurat = "*"
-r-hdf5r = "*"
-r-reticulate = "*"
-r-remotes = "*"
 
 anndata = ">=0.11.4,<0.12"
 seaborn = ">=0.13.2,<0.14"
@@ -41,6 +35,7 @@ pytest = ">=7.0"
 pytest-cov = ">=4.0"
 muon = ">=0.1.6"
 harmonypy = ">=0.0.9"
+celltypist = ">=1.6.0"
 
 [target.linux-64.dependencies]
 scikit-misc = ">=0.1.4,<0.2"  # Apparently not available on windows

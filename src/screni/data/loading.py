@@ -370,109 +370,131 @@ def load_pbmc(
 
 def annotate_pbmc_cell_types(
     rna: ad.AnnData,
-    resolution: float = 0.8,
+    model_name: str = "Immune_All_Low.pkl",
 ) -> ad.AnnData:
-    """Annotate PBMC cell types using standard scanpy clustering + markers.
+    """Annotate PBMC cell types using CellTypist reference-based annotation.
 
-    Performs normalization, HVG selection, PCA, neighbors, Leiden clustering,
-    then assigns cell types based on canonical marker expression.
+    The original ScReNI pipeline uses Seurat reference-based label transfer
+    (FindTransferAnchors + TransferData) against the Hao et al. 2021 PBMC
+    reference. CellTypist is the Python equivalent: a pre-trained logistic
+    regression model on the same immune cell atlas data.
+
+    The model produces fine-grained immune subtypes which we then map to
+    the 8 cell types used in the ScReNI paper.
 
     Parameters
     ----------
     rna
         Raw RNA AnnData from ``load_pbmc()``.
-    resolution
-        Leiden clustering resolution.
+    model_name
+        CellTypist model to use. ``"Immune_All_Low.pkl"`` gives fine-grained
+        types comparable to Seurat's ``celltype.l2``.
 
     Returns
     -------
-    AnnData with ``.obs['cell_type']`` and ``.obs['leiden']`` added.
-    The ``.X`` is restored to raw counts after annotation.
+    AnnData with ``.obs['cell_type']`` and ``.obs['cell_type_fine']`` added.
+    The ``.X`` contains raw counts.
     """
-    adata = rna.copy()
-
-    # Store raw counts
-    adata.layers["counts"] = adata.X.copy()
-
-    # Standard preprocessing
-    sc.pp.normalize_total(adata, target_sum=1e4)
-    sc.pp.log1p(adata)
-    sc.pp.highly_variable_genes(adata, n_top_genes=2000)
-    adata_hvg = adata[:, adata.var["highly_variable"]].copy()
-    sc.pp.scale(adata_hvg, max_value=10)
-    sc.tl.pca(adata_hvg, n_comps=50)
-    sc.pp.neighbors(adata_hvg, n_neighbors=20, n_pcs=30)
-    sc.tl.leiden(adata_hvg, resolution=resolution)
-
-    # Transfer cluster labels back
-    adata.obs["leiden"] = adata_hvg.obs["leiden"]
-
-    # Store embeddings
-    adata.obsm["X_pca"] = adata_hvg.obsm["X_pca"]
-    adata.obsm["X_umap"] = np.zeros((adata.n_obs, 2))  # placeholder
-    if "X_umap" in adata_hvg.obsm:
-        adata.obsm["X_umap"] = adata_hvg.obsm["X_umap"]
-
-    # Compute UMAP
-    sc.tl.umap(adata_hvg)
-    adata.obsm["X_umap"] = adata_hvg.obsm["X_umap"]
-
-    # Score marker genes for each cell type
-    markers = {
-        "CD14 monocyte": ["CD14", "LYZ", "S100A9"],
-        "CD16 monocyte": ["FCGR3A", "MS4A7"],
-        "CD4 naive cell": ["IL7R", "CCR7", "LEF1"],
-        "CD8 naive cell": ["CD8A", "CD8B"],
-        "cDC": ["FCER1A", "CST3", "CLEC10A"],
-        "Memory B cell": ["MS4A1", "CD79A", "CD79B"],
-        "NK": ["GNLY", "NKG7", "KLRD1"],
-        "Treg": ["FOXP3", "IL2RA", "CTLA4"],
-    }
-
-    # For each cluster, find the best matching cell type by mean marker expression
-    cluster_labels = adata.obs["leiden"].unique()
-
-    # Get normalized expression for scoring
-    # (adata still has log-normalized values in .X at this point)
-    cluster_to_type = {}
-    for cluster in sorted(cluster_labels, key=int):
-        cluster_mask = adata.obs["leiden"] == cluster
-        best_score = -np.inf
-        best_type = "Unknown"
-
-        for ct, genes in markers.items():
-            # Filter to genes that exist in the data
-            valid_genes = [g for g in genes if g in adata.var_names]
-            if not valid_genes:
-                continue
-
-            # Mean expression of marker genes in this cluster
-            if sp.issparse(adata.X):
-                expr = adata[cluster_mask, valid_genes].X.toarray()
-            else:
-                expr = adata[cluster_mask, valid_genes].X
-            score = expr.mean()
-
-            if score > best_score:
-                best_score = score
-                best_type = ct
-
-        cluster_to_type[cluster] = best_type
-        n_cells = cluster_mask.sum()
-        logger.info(
-            f"  Cluster {cluster}: {n_cells} cells → {best_type} "
-            f"(score={best_score:.3f})"
+    try:
+        import celltypist
+        from celltypist import models
+    except ImportError:
+        raise ImportError(
+            "celltypist is required for PBMC annotation. "
+            "Install with: pip install celltypist"
         )
 
-    adata.obs["cell_type"] = adata.obs["leiden"].map(cluster_to_type)
+    adata = rna.copy()
+
+    # CellTypist needs log-normalized data
+    adata.layers["counts"] = adata.X.copy()
+    sc.pp.normalize_total(adata, target_sum=1e4)
+    sc.pp.log1p(adata)
+
+    # Download model if needed and run prediction
+    logger.info(f"  Running CellTypist with model '{model_name}'...")
+    models.download_models(model=model_name)
+    model = models.Model.load(model=model_name)
+    predictions = celltypist.annotate(adata, model=model, majority_voting=True)
+
+    # Transfer labels
+    adata.obs["cell_type_fine"] = predictions.predicted_labels["majority_voting"]
+    logger.info(
+        f"  CellTypist fine-grained types: "
+        f"{adata.obs['cell_type_fine'].nunique()} unique"
+    )
+    logger.info(
+        f"  Fine-grained counts:\n"
+        f"{adata.obs['cell_type_fine'].value_counts().to_string()}"
+    )
+
+    # Map fine-grained CellTypist labels to the 8 ScReNI paper types.
+    # CellTypist Immune_All_Low labels include types like:
+    #   "Classical monocytes" → CD14 monocyte
+    #   "Non-classical monocytes" → CD16 monocyte
+    #   "CD4-positive, alpha-beta T cell" → CD4 naive cell
+    #   etc.
+    # This mapping covers known label variations; unmapped types → None.
+    celltypist_to_screni = {
+        # Monocytes
+        "Classical monocytes": "CD14 monocyte",
+        "CD14-positive monocyte": "CD14 monocyte",
+        "CD14+ monocyte": "CD14 monocyte",
+        "Non-classical monocytes": "CD16 monocyte",
+        "CD16-positive monocyte": "CD16 monocyte",
+        "CD16+ monocyte": "CD16 monocyte",
+        # T cells
+        "Naive CD4+ T cells": "CD4 naive cell",
+        "CD4-positive, alpha-beta T cell": "CD4 naive cell",
+        "Central memory CD4+ T cells": "CD4 naive cell",
+        "Naive CD8+ T cells": "CD8 naive cell",
+        "CD8-positive, alpha-beta T cell": "CD8 naive cell",
+        "Central memory CD8+ T cells": "CD8 naive cell",
+        # DCs
+        "Conventional dendritic cells": "cDC",
+        "Myeloid dendritic cells": "cDC",
+        "cDC1": "cDC",
+        "cDC2": "cDC",
+        # B cells
+        "Memory B cells": "Memory B cell",
+        "Class-switched memory B cells": "Memory B cell",
+        "Non-switched memory B cells": "Memory B cell",
+        "Age-associated B cells": "Memory B cell",
+        # NK
+        "NK cells": "NK",
+        "Natural killer cell": "NK",
+        "CD16+ NK cells": "NK",
+        "CD56bright NK cells": "NK",
+        # Treg
+        "Regulatory T cells": "Treg",
+        "T regulatory cells": "Treg",
+    }
+
+    mapped = adata.obs["cell_type_fine"].map(celltypist_to_screni)
+    n_mapped = mapped.notna().sum()
+    n_total = len(mapped)
+    logger.info(f"  Mapped {n_mapped}/{n_total} cells to ScReNI types")
+
+    # Log unmapped types so we can extend the mapping
+    unmapped_types = (
+        adata.obs.loc[mapped.isna(), "cell_type_fine"]
+        .value_counts()
+    )
+    if len(unmapped_types) > 0:
+        logger.warning(
+            f"  Unmapped CellTypist types ({mapped.isna().sum()} cells):\n"
+            f"{unmapped_types.to_string()}"
+        )
+
+    adata.obs["cell_type"] = mapped
+
+    # Report final counts
+    ct_counts = adata.obs["cell_type"].value_counts()
+    logger.info(f"  Final cell type counts:\n{ct_counts.to_string()}")
 
     # Restore raw counts
     adata.X = adata.layers["counts"]
     del adata.layers["counts"]
-
-    # Report
-    ct_counts = adata.obs["cell_type"].value_counts()
-    logger.info(f"  Cell type counts:\n{ct_counts.to_string()}")
 
     return adata
 

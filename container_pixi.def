@@ -1,4 +1,4 @@
-# Version: 0.1.1
+# Version: 0.1.2
 
 # Header
 Bootstrap: docker
@@ -8,7 +8,6 @@ From: ghcr.io/prefix-dev/pixi:0.34.0
 %files
     pixi.toml /opt/app/pixi.toml
     pixi.lock /opt/app/pixi.lock
-    install_deps.R /opt/app/install_deps.R
 
 # Install dependencies
 %post
@@ -22,7 +21,3 @@ From: ghcr.io/prefix-dev/pixi:0.34.0
 
     # Clean up
     rm -rf ~/.cache/rattler
-
-    # R dependencies (in the install_deps.R script)
-    pixi run Rscript install_deps.R
-    rm install_deps.R

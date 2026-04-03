@@ -8,3 +8,5 @@
 
 # Container stuff
 *.sif
+
+__pycache__/
