@@ -370,7 +370,7 @@ def load_pbmc(
 
 def annotate_pbmc_cell_types(
     rna: ad.AnnData,
-    model_name: str = "Immune_All_Low.pkl",
+    model_name: str = "Healthy_COVID19_PBMC.pkl",
 ) -> ad.AnnData:
     """Annotate PBMC cell types using CellTypist reference-based annotation.
 
@@ -443,37 +443,27 @@ def annotate_pbmc_cell_types(
     # This mapping covers known label variations; unmapped types → None.
     celltypist_to_screni = {
         # Monocytes
-        "Classical monocytes": "CD14 monocyte",
-        "CD14-positive monocyte": "CD14 monocyte",
-        "CD14+ monocyte": "CD14 monocyte",
-        "Non-classical monocytes": "CD16 monocyte",
-        "CD16-positive monocyte": "CD16 monocyte",
-        "CD16+ monocyte": "CD16 monocyte",
-        # T cells
-        "Naive CD4+ T cells": "CD4 naive cell",
-        "CD4-positive, alpha-beta T cell": "CD4 naive cell",
-        "Central memory CD4+ T cells": "CD4 naive cell",
-        "Naive CD8+ T cells": "CD8 naive cell",
-        "CD8-positive, alpha-beta T cell": "CD8 naive cell",
-        "Central memory CD8+ T cells": "CD8 naive cell",
-        # DCs
-        "Conventional dendritic cells": "cDC",
-        "Myeloid dendritic cells": "cDC",
-        "cDC1": "cDC",
-        "cDC2": "cDC",
-        # B cells
-        "Memory B cells": "Memory B cell",
-        "Class-switched memory B cells": "Memory B cell",
-        "Non-switched memory B cells": "Memory B cell",
-        "Age-associated B cells": "Memory B cell",
+        "CD14_mono": "CD14 monocyte",
+        "CD83_CD14_mono": "CD14 monocyte",
+        "CD16_mono": "CD16 monocyte",
+        "C1_CD16_mono": "CD16 monocyte",
+        # CD4 T cells - paper says "CD4 naive cells"
+        "CD4.Naive": "CD4 naive cell",
+        # CD8 T cells - paper says "CD8 naive cells"
+        "CD8.Naive": "CD8 naive cell",
+        # DCs - paper says "cDC"
+        "DC1": "cDC",
+        "DC2": "cDC",
+        "DC3": "cDC",
+        "ASDC": "cDC",
+        # B cells - paper says "memory B cells"
+        "B_switched_memory": "Memory B cell",
+        "B_non-switched_memory": "Memory B cell",
         # NK
-        "NK cells": "NK",
-        "Natural killer cell": "NK",
-        "CD16+ NK cells": "NK",
-        "CD56bright NK cells": "NK",
+        "NK_16hi": "NK",
+        "NK_56hi": "NK",
         # Treg
-        "Regulatory T cells": "Treg",
-        "T regulatory cells": "Treg",
+        "Treg": "Treg",
     }
 
     mapped = adata.obs["cell_type_fine"].map(celltypist_to_screni)
