@@ -176,6 +176,19 @@ intergenic       666
   Shape: (107052, 94)
   Columns: ['barcode', 'sample', 'age', 'Size_Factor', 'num_genes_expressed', 'Total_mRNAs', 'umap_cluster', 'umap_coord1', 'umap_coord2', 'umap_coord3', 'used_for_pseudotime', 'pattern_match', 'Patt.1', 'Patt.2', 'Patt.3', 'Patt.4', 'Patt.5', 'Patt.6', 'Patt.7', 'Patt.8', 'Patt.9', 'Patt.10', 'Patt.11', 'Patt.12', 'Patt.13', 'Patt.14', 'Patt.15', 'Patt.16', 'Patt.17', 'Patt.18', 'Patt.19', 'Patt.20', 'Patt.21', 'Patt.22', 'Patt.23', 'Patt.24', 'Patt.25', 'Patt.26', 'Patt.27', 'Patt.28', 'Patt.29', 'Patt.30', 'Patt.31', 'Patt.32', 'Patt.33', 'Patt.34', 'Patt.35', 'Patt.36', 'Patt.37', 'Patt.38', 'Patt.39', 'Patt.40', 'Patt.41', 'Patt.42', 'Patt.43', 'Patt.44', 'Patt.45', 'Patt.46', 'Patt.47', 'Patt.48', 'Patt.49', 'Patt.50', 'Patt.51', 'Patt.52', 'Patt.53', 'Patt.54', 'Patt.55', 'Patt.56', 'Patt.57', 'Patt.58', 'Patt.59', 'Patt.60', 'Patt.61', 'Patt.62', 'Patt.63', 'Patt.64', 'Patt.65', 'Patt.66', 'Patt.67', 'Patt.68', 'Patt.69', 'Patt.70', 'Patt.71', 'Patt.72', 'Patt.73', 'Patt.74', 'Patt.75', 'Patt.76', 'Patt.77', 'Patt.78', 'Patt.79', 'Patt.80', 'umap2_CellType', 'old_CellType_annot']
 
+  umap2_CellType (11 types):
+    Early RPCs                       27,856
+    Late RPCs                        24,440
+    Rods                             14,481
+    Neurogenic Cells                  9,084
+    Amacrine Cells                    7,437
+    Photoreceptor Precursors          6,366
+    Retinal Ganglion Cells            6,045
+    Bipolar Cells                     3,613
+    Cones                             3,530
+    Muller Glia                       2,587
+    Horizontal Cells                  1,613
+
   Timepoints (10):
     E14          24,206
     E18          20,578
@@ -187,6 +200,8 @@ intergenic       666
     P5            5,366
     E16           4,763
     E12           1,503
+
+  Saved: output/data_inspection/retinal_scrnaseq_overview.png
 
   --- Feature Annotations ---
   Shape: (27998, 7)
@@ -210,3 +225,4 @@ intergenic       666
     pbmc_top_genes.png
     retinal_atacseq_celltypes.png
     retinal_dataset_sizes.png
+    retinal_scrnaseq_overview.png
