@@ -1,5 +1,6 @@
 # large data files untracked:
 /data/
+/output/
 
 # IDE
 .claude/

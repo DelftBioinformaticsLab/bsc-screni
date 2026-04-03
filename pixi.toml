@@ -13,6 +13,8 @@ linux = "3.10"  # Lower for older kernel on DAIC
 [tasks]
 setup-dev = "pip install -e ."
 process = { cmd = "python -m screni.data.loading", env = { PYTHONPATH = "src" } }
+integrate-pbmc = { cmd = "python -m screni.data.integration", env = { PYTHONPATH = "src" } }
+integrate-retinal = { cmd = "python -m screni.data.integration_retinal", env = { PYTHONPATH = "src" } }
 
 [dependencies]
 ipykernel = "*"
@@ -38,7 +40,10 @@ harmonypy = ">=0.0.9"
 celltypist = ">=1.6.0"
 
 [target.linux-64.dependencies]
-scikit-misc = ">=0.1.4,<0.2"  # Apparently not available on windows
+scikit-misc = ">=0.1.4,<0.2"
+
+[target.win-64.pypi-dependencies]
+scikit-misc = ">=0.1.4"       # conda build broken on Windows, pip works
 
 [target.linux-64.pypi-dependencies]
 pyfaidx = ">=0.7.0"           # Genome FASTA indexing (pure Python, pip only)

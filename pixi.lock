@@ -443,6 +443,7 @@ environments:
       - pypi: https://files.pythonhosted.org/packages/7c/e4/56027c4a6b4ae70ca9de302488c5ca95ad4a39e190093d6c1a8ace08341b/requests-2.32.4-py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/e9/93/0c0f002031f18b53af7a6166103c02b9c0667be528944137cc954ec921b3/rsa-4.7.2-py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/18/17/22bf8155aa0ea2305eefa3a6402e040df7ebe512d1310165eda1e233c3f8/s3transfer-0.13.0-py3-none-any.whl
+      - pypi: https://files.pythonhosted.org/packages/fb/c3/35c9fe02ddda3491df25db7356d849038666bedc3ba6ebdb2217ec954045/scikit_misc-0.5.2-cp311-cp311-win_amd64.whl
       - pypi: https://files.pythonhosted.org/packages/e9/44/75a9c9421471a6c4805dbf2356f7c181a29c1879239abab1ea2cc8f38b40/sniffio-1.3.1-py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/a2/09/77d55d46fd61b4a135c444fc97158ef34a095e5681d0a6c10b75bf356191/sympy-1.14.0-py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/cd/91/be4b72b493d25f257f1b38f03504ac2b4feae2d6e52b12de68ac52c680d6/synapseclient-4.8.0-py3-none-any.whl
@@ -5545,6 +5546,31 @@ packages:
   - pkg:pypi/scikit-learn?source=hash-mapping
   size: 9575281
   timestamp: 1749488567240
+- kind: pypi
+  name: scikit-misc
+  version: 0.5.2
+  url: https://files.pythonhosted.org/packages/fb/c3/35c9fe02ddda3491df25db7356d849038666bedc3ba6ebdb2217ec954045/scikit_misc-0.5.2-cp311-cp311-win_amd64.whl
+  sha256: aee708678a3e6a9567cb47e3d50cb802f1dd8add2c823bb66ff9267096c9e72a
+  requires_dist:
+  - numpy>=1.26.4
+  - scikit-misc[doc] ; extra == 'all'
+  - scikit-misc[build] ; extra == 'all'
+  - scikit-misc[lint] ; extra == 'all'
+  - scikit-misc[test] ; extra == 'all'
+  - scikit-misc[dev] ; extra == 'all'
+  - numpydoc ; extra == 'doc'
+  - sphinx ; extra == 'doc'
+  - cython ; extra == 'build'
+  - build ; extra == 'build'
+  - spin ; extra == 'build'
+  - meson ; extra == 'build'
+  - meson-python ; extra == 'build'
+  - ninja ; extra == 'build'
+  - ruff ; extra == 'lint'
+  - pytest-cov ; extra == 'test'
+  - wheel ; extra == 'dev'
+  - twine ; extra == 'dev'
+  requires_python: '>=3.10'
 - kind: conda
   name: scikit-misc
   version: 0.1.4
