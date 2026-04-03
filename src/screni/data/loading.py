@@ -411,10 +411,16 @@ def annotate_pbmc_cell_types(
     sc.pp.normalize_total(adata, target_sum=1e4)
     sc.pp.log1p(adata)
 
-    # Download model if needed and run prediction
+    # Load model - try local path first, then download
     logger.info(f"  Running CellTypist with model '{model_name}'...")
-    models.download_models(model=model_name)
-    model = models.Model.load(model=model_name)
+    model_path = Path(f"data/reference/{model_name}")
+    if model_path.exists():
+        logger.info(f"  Loading model from {model_path}")
+        model = models.Model.load(model=str(model_path))
+    else:
+        logger.info("  Model not found locally, downloading...")
+        models.download_models(model=model_name)
+        model = models.Model.load(model=model_name)
     predictions = celltypist.annotate(adata, model=model, majority_voting=True)
 
     # Transfer labels
