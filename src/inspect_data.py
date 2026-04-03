@@ -323,9 +323,9 @@ def inspect_retinal():
         print(f"  Shape: {cells_rna.shape}")
         print(f"  Columns: {list(cells_rna.columns)}")
 
-        if "umap_CellType" in cells_rna.columns:
-            ct_counts = cells_rna["umap_CellType"].value_counts()
-            print(f"\n  umap_CellType ({ct_counts.shape[0]} types):")
+        if "umap2_CellType" in cells_rna.columns:
+            ct_counts = cells_rna["umap2_CellType"].value_counts()
+            print(f"\n  umap2_CellType ({ct_counts.shape[0]} types):")
             for ct, n in ct_counts.items():
                 print(f"    {ct:30s} {n:>8,}")
 
@@ -336,11 +336,11 @@ def inspect_retinal():
                 print(f"    {age:10s} {n:>8,}")
 
         # Plot cell type distribution
-        if "umap_CellType" in cells_rna.columns:
+        if "umap2_CellType" in cells_rna.columns:
             fig, axes = plt.subplots(1, 2, figsize=(16, 6))
 
-            cells_rna["umap_CellType"].value_counts().plot.barh(ax=axes[0])
-            axes[0].set_title("Retinal scRNA-seq: cell types (umap_CellType)")
+            cells_rna["umap2_CellType"].value_counts().plot.barh(ax=axes[0])
+            axes[0].set_title("Retinal scRNA-seq: cell types (umap2_CellType)")
             axes[0].set_xlabel("Number of cells")
 
             cells_rna["age"].value_counts().sort_index().plot.bar(ax=axes[1])
