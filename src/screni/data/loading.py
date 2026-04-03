@@ -706,6 +706,13 @@ def load_and_save_all(
         logger.info("  Generating PBMC diagnostic plots...")
         plot_pbmc_diagnostics(pbmc_rna, plot_dir)
 
+        # Save unfiltered version (all CellTypist types, unmapped = NaN)
+        pbmc_atac.obs["cell_type"] = pbmc_rna.obs["cell_type"].values
+        pbmc_atac.obs["cell_type_celltypist"] = pbmc_rna.obs["cell_type_celltypist"].values
+        pbmc_rna.write_h5ad(output_dir / "pbmc_rna_all.h5ad")
+        pbmc_atac.write_h5ad(output_dir / "pbmc_atac_all.h5ad")
+        logger.info(f"  Saved pbmc_rna_all.h5ad: {pbmc_rna.shape} (all types, incl. unmapped)")
+
         # Filter to mapped ScReNI cell types only
         mask = pbmc_rna.obs["cell_type"].notna()
         pbmc_rna = pbmc_rna[mask].copy()
@@ -716,14 +723,11 @@ def load_and_save_all(
         )
         _check_counts(pbmc_rna, EXPECTED_COUNTS["pbmc"], "pbmc")
 
-        # Transfer cell type to ATAC (paired data, same cells)
-        pbmc_atac.obs["cell_type"] = pbmc_rna.obs["cell_type"].values
-
         pbmc_rna.write_h5ad(output_dir / "pbmc_rna.h5ad")
         pbmc_atac.write_h5ad(output_dir / "pbmc_atac.h5ad")
         results["pbmc_rna"] = pbmc_rna
         results["pbmc_atac"] = pbmc_atac
-        logger.info(f"  Saved pbmc_rna.h5ad: {pbmc_rna.shape}")
+        logger.info(f"  Saved pbmc_rna.h5ad: {pbmc_rna.shape} (8 ScReNI types only)")
         logger.info(f"  Saved pbmc_atac.h5ad: {pbmc_atac.shape}")
     else:
         logger.warning(f"  PBMC dir not found: {pbmc_dir}")
