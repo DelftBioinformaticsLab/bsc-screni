@@ -193,15 +193,70 @@ if __name__ == "__main__":
     mdata.write(out_dir / "pbmc_integrated.h5mu")
     logger.info(f"Saved pbmc_integrated.h5mu")
 
-    # ---- Plot WNN UMAP ----
+    # ---- Validation plots ----
     import matplotlib.pyplot as plt
+    import pandas as pd
 
     fig_dir = Path("output/integration")
     fig_dir.mkdir(parents=True, exist_ok=True)
+    rna_mod = mdata.mod["rna"]
+    atac_mod = mdata.mod["atac"]
 
+    # 1. Standalone RNA UMAP
+    if "X_umap" in rna_mod.obsm:
+        fig, ax = plt.subplots(figsize=(7, 5))
+        sc.pl.umap(rna_mod, color="cell_type", ax=ax, show=False, title="RNA UMAP (standalone)")
+        fig.savefig(fig_dir / "pbmc_rna_umap.png", dpi=150, bbox_inches="tight")
+        plt.close()
+        logger.info(f"Saved {fig_dir / 'pbmc_rna_umap.png'}")
+
+    # 2. Standalone ATAC UMAP (LSI dims 2:N, dropping component 1)
+    atac_mod.obsm["X_lsi_no1"] = atac_mod.obsm["X_lsi"][:, 1:21]
+    sc.pp.neighbors(atac_mod, use_rep="X_lsi_no1", key_added="lsi_no1")
+    sc.tl.umap(atac_mod, neighbors_key="lsi_no1")
+    fig, ax = plt.subplots(figsize=(7, 5))
+    sc.pl.umap(atac_mod, color="cell_type", ax=ax, show=False, title="ATAC UMAP (LSI dims 2:N)")
+    fig.savefig(fig_dir / "pbmc_atac_umap.png", dpi=150, bbox_inches="tight")
+    plt.close()
+    logger.info(f"Saved {fig_dir / 'pbmc_atac_umap.png'}")
+
+    # 3. WNN UMAP (clusters + cell type)
     fig, axes = plt.subplots(1, 2, figsize=(14, 5))
     sc.pl.umap(mdata, color="leiden", ax=axes[0], show=False, title="Leiden clusters")
     sc.pl.umap(mdata, color="rna:cell_type", ax=axes[1], show=False, title="Cell type")
     fig.tight_layout()
     fig.savefig(fig_dir / "pbmc_wnn_umap.png", dpi=150, bbox_inches="tight")
+    plt.close()
     logger.info(f"Saved {fig_dir / 'pbmc_wnn_umap.png'}")
+
+    # 4. Modality weights per cell type
+    obs = mdata.obs
+    if "rna:mod_weight" in obs.columns:
+        weights = obs.groupby("rna:cell_type", observed=True)[
+            ["rna:mod_weight", "atac:mod_weight"]
+        ].mean()
+        fig, ax = plt.subplots(figsize=(8, 5))
+        weights["rna:mod_weight"].sort_values().plot.barh(ax=ax, color="steelblue")
+        ax.set_xlabel("Mean RNA weight")
+        ax.set_title("RNA modality weight by cell type")
+        ax.axvline(0.5, color="grey", linestyle="--", alpha=0.5)
+        fig.tight_layout()
+        fig.savefig(fig_dir / "pbmc_modality_weights.png", dpi=150, bbox_inches="tight")
+        plt.close()
+        logger.info(f"Saved {fig_dir / 'pbmc_modality_weights.png'}")
+
+    # 5. Cell type composition per cluster
+    ct = obs["rna:cell_type"]
+    leiden = obs["leiden"]
+    crosstab = pd.crosstab(leiden, ct)
+    proportions = crosstab.div(crosstab.sum(axis=1), axis=0)
+    fig, ax = plt.subplots(figsize=(10, 6))
+    proportions.plot.bar(stacked=True, ax=ax, legend=True)
+    ax.set_ylabel("Proportion")
+    ax.set_xlabel("Leiden cluster")
+    ax.set_title("Cell type composition per cluster")
+    ax.legend(bbox_to_anchor=(1.02, 1), loc="upper left", fontsize=8)
+    fig.tight_layout()
+    fig.savefig(fig_dir / "pbmc_cluster_composition.png", dpi=150, bbox_inches="tight")
+    plt.close()
+    logger.info(f"Saved {fig_dir / 'pbmc_cluster_composition.png'}")

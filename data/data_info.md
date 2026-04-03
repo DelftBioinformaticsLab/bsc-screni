@@ -33,7 +33,18 @@ Cell type names in RNA data differ from ATAC: `RPCs`, `Early RPCs`, `Late RPCs`,
 
 ### Mapping between the two datasets
 
-The ScReNI paper uses "age-matched nine time points" — the intersection of ATAC (11 timepoints) and RNA (10 timepoints). The cell type names also differ between the two datasets and were remapped by the ScReNI authors (e.g. `RPCs_S1/S2/S3` ↔ `Early RPCs`/`Late RPCs`).
+The ScReNI paper uses "age-matched nine time points" (confirmed from Figure 2A
+UMAP legend): **E11, E12, E14, E16, E18, P0, P2, P5, P8**.
+
+- P11 is excluded because the RNA dataset (Clark 2019) doesn't have it.
+- P14 is excluded by the authors' choice — it contains mostly mature MG cells
+  (937/940 cells at P14 are MG). Dropping P14 brings the MG count from 1710 to
+  773, matching the paper's 768.
+
+The cell type names differ between the two datasets: ATAC uses `RPCs_S1/S2/S3`
+and `MG`, while RNA uses `Early RPCs`, `Late RPCs`, `Muller Glia`, etc. The
+final RPC1/2/3/MG labels are assigned to RNA cells after cross-modal
+integration by transferring labels from matched ATAC cells.
 
 ## PBMC 10X
 

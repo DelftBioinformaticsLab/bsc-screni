@@ -616,3 +616,35 @@ if __name__ == "__main__":
     merged.write_h5ad(out_dir / "retinal_integrated.h5ad")
     pairs.to_csv(out_dir / "retinal_nn_pairs.csv", index=False)
     logger.info("Saved retinal_integrated.h5ad and retinal_nn_pairs.csv")
+
+    # Diagnostic plots
+    plot_dir = Path("output/data_inspection")
+    plot_dir.mkdir(parents=True, exist_ok=True)
+    plot_retinal_integration(merged, plot_dir)
+
+
+def plot_retinal_integration(merged: ad.AnnData, output_dir) -> None:
+    """Generate diagnostic UMAPs for retinal integration."""
+    import matplotlib
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+    from pathlib import Path
+
+    output_dir = Path(output_dir)
+
+    fig, axes = plt.subplots(1, 3, figsize=(30, 8))
+
+    sc.pl.umap(merged, color="datatype", ax=axes[0], show=False,
+               title="Data type (RNA vs ATAC)")
+    sc.pl.umap(merged, color="cell_type", ax=axes[1], show=False,
+               title="Cell type")
+    if "timepoint" in merged.obs.columns:
+        sc.pl.umap(merged, color="timepoint", ax=axes[2], show=False,
+                   title="Timepoint")
+    else:
+        axes[2].set_visible(False)
+
+    fig.tight_layout()
+    fig.savefig(output_dir / "retinal_integration_umap.png", dpi=150)
+    logger.info(f"  Saved {output_dir / 'retinal_integration_umap.png'}")
+    plt.close(fig)
