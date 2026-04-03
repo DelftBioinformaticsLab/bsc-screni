@@ -1,0 +1,173 @@
+/opt/app/.pixi/envs/default/lib/python3.11/site-packages/anndata/_core/anndata.py:1758: UserWarning: Variable names are not unique. To make them unique, call `.var_names_make_unique`.
+  utils.warn_names_duplicates("var")
+/opt/app/.pixi/envs/default/lib/python3.11/site-packages/anndata/_core/anndata.py:1758: UserWarning: Variable names are not unique. To make them unique, call `.var_names_make_unique`.
+  utils.warn_names_duplicates("var")
+Python: 3.11.13 | packaged by conda-forge | (main, Jun  4 2025, 14:48:23) [GCC 13.3.0]
+scanpy: 1.11.2
+anndata: 0.11.4
+Working directory: /opt/app
+Data directory: /opt/app/data
+Output directory: /opt/app/output/data_inspection
+
+============================================================
+  PBMC 10X Multiome (paired)
+============================================================
+
+Reading pbmc_unsorted_10k_filtered_feature_bc_matrix.h5 ...
+  Full matrix: 12012 cells x 148458 features
+  Feature types: {'Peaks': 111857, 'Gene Expression': 36601}
+  Gene Expression features: 36601
+  ATAC Peaks features: 111857
+
+  --- Gene Expression ---
+  Shape: (12012, 36601)
+  Sparsity: 94.83% zeros
+  Total counts: 48486436
+  Counts/cell: median=3300, mean=4036, min=77, max=70091
+  Genes/cell:  median=1719, mean=1890
+
+  --- ATAC Peaks ---
+  Shape: (12012, 111857)
+  Fragments/cell: median=14867, mean=16292
+  Peaks/cell:     median=6427, mean=6608
+
+  Saved: output/data_inspection/pbmc_distributions.png
+  Saved: output/data_inspection/pbmc_top_genes.png
+
+  --- Peak Annotations ---
+  Shape: (142325, 6)
+  Columns: ['chrom', 'start', 'end', 'gene', 'distance', 'peak_type']
+  Peak types:
+peak_type
+distal        119390
+promoter       22269
+intergenic       666
+
+  --- Peaks BED ---
+  Total peaks: 111908
+  Chromosomes: ['#', '# description=PBMC from a healthy donor - no cell sorting (10k)', '# id=pbmc_unsorted_10k', '# mkref_version=cellranger-arc-2.0.0', '# pipeline_name=cellranger-arc', '# pipeline_version=cellranger-arc-2.0.0', '# primary_contig=GL000009.2', '# primary_contig=GL000194.1', '# primary_contig=GL000195.1', '# primary_contig=GL000205.2', '# primary_contig=GL000213.1', '# primary_contig=GL000218.1', '# primary_contig=GL000219.1', '# primary_contig=KI270711.1', '# primary_contig=KI270713.1', '# primary_contig=KI270721.1', '# primary_contig=KI270726.1', '# primary_contig=KI270727.1', '# primary_contig=KI270728.1', '# primary_contig=KI270731.1', '# primary_contig=KI270734.1', '# primary_contig=chr1', '# primary_contig=chr10', '# primary_contig=chr11', '# primary_contig=chr12', '# primary_contig=chr13', '# primary_contig=chr14', '# primary_contig=chr15', '# primary_contig=chr16', '# primary_contig=chr17', '# primary_contig=chr18', '# primary_contig=chr19', '# primary_contig=chr2', '# primary_contig=chr20', '# primary_contig=chr21', '# primary_contig=chr22', '# primary_contig=chr3', '# primary_contig=chr4', '# primary_contig=chr5', '# primary_contig=chr6', '# primary_contig=chr7', '# primary_contig=chr8', '# primary_contig=chr9', '# primary_contig=chrX', '# primary_contig=chrY', '# reference_fasta_hash=b6f131840f9f337e7b858c3d1e89d7ce0321b243', '# reference_gtf_hash=3b4c36ca3bade222a5b53394e8c07a18db7ebb11', '# reference_path=/mnt/scratch2/cellranger-arc-2.0.0/refdata-cellranger-arc-GRCh38-2020-A-2.0.0', '# reference_version=2020-A', 'GL000194.1', 'GL000195.1', 'GL000205.2', 'GL000218.1', 'GL000219.1', 'KI270711.1', 'KI270713.1', 'KI270721.1', 'KI270726.1', 'KI270727.1', 'KI270728.1', 'KI270734.1', 'chr1', 'chr10', 'chr11', 'chr12', 'chr13', 'chr14', 'chr15', 'chr16', 'chr17', 'chr18', 'chr19', 'chr2', 'chr20', 'chr21', 'chr22', 'chr3', 'chr4', 'chr5', 'chr6', 'chr7', 'chr8', 'chr9', 'chrX', 'chrY']
+  Peak width: median=870bp, mean=842bp
+
+  --- Run Summary ---
+  Sample ID: pbmc_unsorted_10k
+  Genome: GRCh38
+  Pipeline version: cellranger-arc-2.0.0
+  Estimated number of cells: 12012
+  Feature linkages detected: 1283035
+  Linked genes: 13958
+  Linked peaks: 79187
+  ATAC Confidently mapped read pairs: 0.8938
+  ATAC Fraction of genome in peaks: 0.0304
+  ATAC Fraction of high-quality fragments in cells: 0.5593
+  ATAC Fraction of high-quality fragments overlapping TSS: 0.5045
+  ATAC Fraction of high-quality fragments overlapping peaks: 0.6359
+  ATAC Fraction of transposition events in peaks in cells: 0.5957
+  ATAC Mean raw read pairs per cell: 38102.5645
+  ATAC Median high-quality fragments per cell: 11769.0
+  ATAC Non-nuclear read pairs: 0.0148
+  ATAC Number of peaks: 111857
+  ATAC Percent duplicates: 0.2449
+  ATAC Q30 bases in barcode: 0.8847
+  ATAC Q30 bases in read 1: 0.9546
+  ATAC Q30 bases in read 2: 0.9443
+  ATAC Q30 bases in sample index i1: 0.9313
+  ATAC Sequenced read pairs: 457688005
+  ATAC TSS enrichment score: 9.8262
+  ATAC Unmapped read pairs: 0.0097
+  ATAC Valid barcodes: 0.9738
+  GEX Fraction of transcriptomic reads in cells: 0.8782
+  GEX Mean raw reads per cell: 69128.5071
+  GEX Median UMI counts per cell: 3300.5
+  GEX Median genes per cell: 1719.0
+  GEX Percent duplicates: 0.8911
+  GEX Q30 bases in UMI: 0.9256
+  GEX Q30 bases in barcode: 0.9317
+  GEX Q30 bases in read 2: 0.8785
+  GEX Q30 bases in sample index i1: 0.9324
+  GEX Q30 bases in sample index i2: 0.8828
+  GEX Reads mapped antisense to gene: 0.1908
+  GEX Reads mapped confidently to exonic regions: 0.4033
+  GEX Reads mapped confidently to genome: 0.9131
+  GEX Reads mapped confidently to intergenic regions: 0.0697
+  GEX Reads mapped confidently to intronic regions: 0.4401
+  GEX Reads mapped confidently to transcriptome: 0.6459
+  GEX Reads mapped to genome: 0.9647
+  GEX Reads with TSO: 0.0619
+  GEX Sequenced read pairs: 830371627
+  GEX Total genes detected: 30348
+  GEX Valid UMIs: 0.9996
+  GEX Valid barcodes: 0.9517
+
+============================================================
+  Retinal Development - Mouse (unpaired)
+============================================================
+
+  Files in data/retinal_GSE181251:
+    GSE181251_E14E16_NFI_overexpression_scRNAseq_cell_annotation.txt.gz      0.2 MB
+    GSE181251_E14E16_NFI_overexpression_scRNAseq_gene_annotation.txt.gz      0.1 MB
+    GSE181251_E14E16_NFI_overexpression_scRNAseq_raw_matrix.mtx.gz    116.3 MB
+    GSE181251_E14E16_overexpression_scATACseq_cell_annotation.txt.gz      0.2 MB
+    GSE181251_E14E16_overexpression_scATACseq_peak_annotation.txt.gz      3.1 MB
+    GSE181251_E14E16_overexpression_scATACseq_raw_matrix.mtx.gz     381.2 MB
+    GSE181251_E14P0_NFI_overexpression_scRNAseq_cell_annotation.txt.gz      0.7 MB
+    GSE181251_E14P0_NFI_overexpression_scRNAseq_gene_annotation.txt.gz      0.1 MB
+    GSE181251_E14P0_NFI_overexpression_scRNAseq_raw_matrix.mtx.gz    255.9 MB
+    GSE181251_P0P5_KO_cell_annotation.txt.gz                          0.5 MB
+    GSE181251_P0P5_KO_gene_annotation.txt.gz                          0.2 MB
+    GSE181251_P0P5_KO_raw_matrix.mtx.gz                             132.3 MB
+    GSE181251_P0P5_Overexpression_cell_annotation.txt.gz              2.2 MB
+    GSE181251_P0P5_Overexpression_gene_annotation.txt.gz              0.2 MB
+    GSE181251_P0P5_Overexpression_raw_matrix.mtx.gz                 405.1 MB
+    GSE181251_P14_KO_scATACseq_cell_annotation.txt.gz                 0.6 MB
+    GSE181251_P14_KO_scATACseq_peak_annotation.txt.gz                 3.1 MB
+    GSE181251_P14_KO_scATACseq_raw_matrix.mtx.gz                   1130.8 MB
+    GSE181251_P2_KO_scATACseq_cell_annotation.txt.gz                  0.7 MB
+    GSE181251_P2_KO_scATACseq_peak_annotation.txt.gz                  3.1 MB
+    GSE181251_P2_KO_scATACseq_raw_matrix.mtx.gz                     653.2 MB
+    GSE181251_P2_Nfi_KO_scRNAseq_cell_annotation.txt.gz               0.9 MB
+    GSE181251_P2_Nfi_KO_scRNAseq_gene_annotation.txt.gz               0.1 MB
+    GSE181251_P2_Nfi_KO_scRNAseq_raw_matrix.mtx.gz                  183.4 MB
+    GSE181251_P2_Nfi_peaks.txt.gz                                     0.2 MB
+    GSE181251_Single_Cell_ATACseq_cell_annotation.txt.gz              3.1 MB
+    GSE181251_Single_Cell_ATACseq_peak_annotation.txt.gz              2.3 MB
+    GSE181251_Single_Cell_ATACseq_raw_matrix.mtx.gz                1105.0 MB
+
+  --- Single Cell ATACseq (developmental timepoints) ---
+  Reading GSE181251_Single_Cell_ATACseq_raw_matrix.mtx.gz ...
+  Raw matrix shape: (283847, 94318)
+  Cell annotations: 94318 cells, columns=['cell_id', 'celltypes', 'UMAP_1', 'UMAP_2', 'UMAP_3', 'realtime']
+  Peak annotations: 283846 peaks, columns=['chr1-3007223-3007816']
+  Matrix: 283847 x 94318
+  Sparsity: 98.63% zeros
+  Non-zero entries: 367,449,042
+
+  Cell annotation columns: ['cell_id', 'celltypes', 'UMAP_1', 'UMAP_2', 'UMAP_3', 'realtime']
+  'celltypes' (13 unique values):
+    {'Rod': 17722, 'RPCs_S3': 11991, 'RPCs_S2': 10966, 'AC_HC': 10890, 'BC': 8654, 'RPCs_S1': 6738, 'Early_Rod': 6371, 'RGC': 5692, 'Early_NG': 3848, 'Late_NG': 3796, 'MG': 3266, 'Early_Cone': 2356, 'Cone': 2028}
+  'realtime' (11 unique values):
+    {'P0': 13617, 'E16': 12314, 'P11': 10798, 'E14': 10024, 'P5': 9952, 'P14': 9935, 'P8': 8251, 'E18': 7935, 'E11': 5759, 'P2': 4680, 'E12': 1053}
+
+  Saved: output/data_inspection/retinal_atacseq_celltypes.png
+
+  --- Perturbation Datasets (summary) ---
+  E14-E16 NFI OE scRNA-seq                    19,516 x    6,571
+  E14-E16 OE scATAC-seq                      283,847 x    7,336
+  E14-P0 NFI OE scRNA-seq                     21,346 x   26,857
+  P0-P5 KO scRNA-seq                          27,934 x   19,089
+  P0-P5 OE scRNA-seq                          27,934 x   78,843
+  P2 Nfi KO scRNA-seq                         18,312 x   35,715
+  P2 KO scATAC-seq                           283,847 x   25,938
+  P14 KO scATAC-seq                          283,847 x   22,705
+
+  Saved: output/data_inspection/retinal_dataset_sizes.png
+
+============================================================
+  Done
+============================================================
+
+  Figures saved to: /opt/app/output/data_inspection
+  Files:
+    pbmc_distributions.png
+    pbmc_top_genes.png
+    retinal_atacseq_celltypes.png
+    retinal_dataset_sizes.png
