@@ -8,8 +8,11 @@
 #SBATCH --mem=64G
 
 # Download mouse retinal development dataset (unpaired scRNA-seq + scATAC-seq)
-# Source: https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE181251
-# Reference: Lyu et al. 2021, Cell Reports (doi:10.1016/j.celrep.2021.109994)
+#
+# scATAC-seq: GSE181251 (Lyu et al. 2021, Cell Reports)
+# scRNA-seq:  GSE118614 (Clark et al. 2019, Neuron)
+#   Processed data + annotations from: https://github.com/gofflab/developing_mouse_retina_scRNASeq
+#
 # Used in ScReNI paper for unpaired data benchmarking.
 
 set -euo pipefail
@@ -79,7 +82,36 @@ wget -nc "${BASE_URL}/GSE181251_P14_KO_scATACseq_raw_matrix.mtx.gz"
 # P2 Nfi ChIP-seq peaks - 171 KB
 wget -nc "${BASE_URL}/GSE181251_P2_Nfi_peaks.txt.gz"
 
+# ===========================================================================
+#  Developmental scRNA-seq (Clark et al. 2019, Neuron)
+#  Source: https://github.com/gofflab/developing_mouse_retina_scRNASeq
+#  GEO: GSE118614
+#  120,804 cells, 10 timepoints (E11-P14), 10X Chromium 3' v2
+# ===========================================================================
+
+SCRNA_DIR="${OUTDIR:-.}/scRNAseq_clark2019"
+mkdir -p "$SCRNA_DIR"
+
+# Count matrix (MTX format)
+wget -nc -O "$SCRNA_DIR/10x_mouse_retina_development.mtx" \
+  "https://www.dropbox.com/s/6d76z4grcnaxgcg/10x_mouse_retina_development.mtx?dl=1"
+
+# Cell annotations with cell types, UMAP coords, timepoints (updated 3/11/21, includes horizontal cells)
+wget -nc -O "$SCRNA_DIR/10x_mouse_retina_pData_umap2_CellType_annot_w_horiz.csv" \
+  "https://www.dropbox.com/s/q5apkp52t0vy7lo/10x_Mouse_retina_pData_umap2_CellType_annot_w_horiz.csv?dl=1"
+
+# Original cell annotations
+wget -nc -O "$SCRNA_DIR/10x_mouse_retina_development_phenoData.csv" \
+  "https://www.dropbox.com/s/y5lho9ifzoktjcs/10x_mouse_retina_development_phenotype.csv?dl=1"
+
+# Gene/feature annotations
+wget -nc -O "$SCRNA_DIR/10x_mouse_retina_development_featureData.csv" \
+  "https://www.dropbox.com/s/1mc4geu3hixrxhj/10x_mouse_retina_development_feature.csv?dl=1"
+
 echo ""
 echo "Done: $(date)"
 echo "Files downloaded to: $(pwd)"
 ls -lh
+echo ""
+echo "scRNA-seq files:"
+ls -lh "$SCRNA_DIR"
