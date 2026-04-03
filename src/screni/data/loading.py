@@ -370,7 +370,7 @@ def load_pbmc(
 
 def annotate_pbmc_cell_types(
     rna: ad.AnnData,
-    model_name: str = "Healthy_COVID19_PBMC.pkl",
+    model_name: str = "Immune_All_Low.pkl",
 ) -> ad.AnnData:
     """Annotate PBMC cell types using CellTypist reference-based annotation.
 
@@ -443,27 +443,21 @@ def annotate_pbmc_cell_types(
     # This mapping covers known label variations; unmapped types → None.
     celltypist_to_screni = {
         # Monocytes
-        "CD14_mono": "CD14 monocyte",
-        "CD83_CD14_mono": "CD14 monocyte",
-        "CD16_mono": "CD16 monocyte",
-        "C1_CD16_mono": "CD16 monocyte",
-        # CD4 T cells - paper says "CD4 naive cells"
-        "CD4.Naive": "CD4 naive cell",
-        # CD8 T cells - paper says "CD8 naive cells"
-        "CD8.Naive": "CD8 naive cell",
-        # DCs - paper says "cDC"
-        "DC1": "cDC",
+        "Classical monocytes": "CD14 monocyte",
+        "Non-classical monocytes": "CD16 monocyte",
+        # CD4 T cells
+        "Tcm/Naive helper T cells": "CD4 naive cell",
+        # CD8 T cells
+        "Tcm/Naive cytotoxic T cells": "CD8 naive cell",
+        # DCs
         "DC2": "cDC",
-        "DC3": "cDC",
-        "ASDC": "cDC",
-        # B cells - paper says "memory B cells"
-        "B_switched_memory": "Memory B cell",
-        "B_non-switched_memory": "Memory B cell",
+        # B cells
+        "Memory B cells": "Memory B cell",
+        "Age-associated B cells": "Memory B cell",
         # NK
-        "NK_16hi": "NK",
-        "NK_56hi": "NK",
+        "CD16+ NK cells": "NK",
         # Treg
-        "Treg": "Treg",
+        "Regulatory T cells": "Treg",
     }
 
     mapped = adata.obs["cell_type_fine"].map(celltypist_to_screni)

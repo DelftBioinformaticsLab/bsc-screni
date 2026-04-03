@@ -13,6 +13,7 @@ linux = "3.10"  # Lower for older kernel on DAIC
 [tasks]
 setup-dev = "pip install -e ."
 process = { cmd = "python -m screni.data.loading", env = { PYTHONPATH = "src" } }
+plot-pbmc = { cmd = "python src/plot_pbmc_umap.py", env = { PYTHONPATH = "src" } }
 
 [dependencies]
 ipykernel = "*"
