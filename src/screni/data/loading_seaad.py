@@ -309,6 +309,38 @@ def classify_donors(
 # =========================================================================
 
 
+def _load_subset(
+    h5ad_path: Path | str,
+    label: str,
+    cell_type_col: str,
+    cell_types: list[str],
+) -> ad.AnnData:
+    """Load an h5ad in backed mode, filter to cell types, then to_memory().
+
+    This avoids loading the full .X matrix when we only keep a subset of cells.
+    """
+    logger.info(f"Loading SEA-AD {label} from {Path(h5ad_path).name} (backed)...")
+    adata = ad.read_h5ad(h5ad_path, backed="r")
+    logger.info(f"  Full {label}: {adata.shape}")
+
+    if cell_type_col not in adata.obs.columns:
+        adata.file.close()
+        raise KeyError(
+            f"Column '{cell_type_col}' not found in {label} obs. "
+            f"Available: {adata.obs.columns.tolist()}"
+        )
+
+    mask = adata.obs[cell_type_col].isin(cell_types)
+    n_keep = mask.sum()
+    logger.info(f"  Keeping {n_keep:,} / {adata.n_obs:,} cells -> loading into memory...")
+
+    subset = adata[mask].to_memory()
+    adata.file.close()
+
+    logger.info(f"  {label} subset: {subset.shape}")
+    return subset
+
+
 def load_seaad(
     rna_path: Path | str,
     atac_path: Path | str,
@@ -331,27 +363,11 @@ def load_seaad(
     (rna, atac) AnnDatas filtered to selected cell types,
     with standardized obs column 'cell_type'.
     """
-    logger.info(f"Loading SEA-AD RNA from {Path(rna_path).name}...")
-    rna = ad.read_h5ad(rna_path)
-    logger.info(f"  Full RNA: {rna.shape}")
-
-    logger.info(f"Loading SEA-AD ATAC from {Path(atac_path).name}...")
-    atac = ad.read_h5ad(atac_path)
-    logger.info(f"  Full ATAC: {atac.shape}")
-
-    # Filter to chosen cell types
-    for label, adata in [("RNA", rna), ("ATAC", atac)]:
-        if cell_type_col not in adata.obs.columns:
-            raise KeyError(
-                f"Column '{cell_type_col}' not found in {label} obs. "
-                f"Available: {adata.obs.columns.tolist()}"
-            )
-
-    rna_mask = rna.obs[cell_type_col].isin(cell_types)
-    atac_mask = atac.obs[cell_type_col].isin(cell_types)
-
-    rna = rna[rna_mask].copy()
-    atac = atac[atac_mask].copy()
+    # Load in backed mode first, filter on obs, then load only the
+    # subset into memory.  This avoids materializing the full .X for
+    # 1.4M x 36K (RNA) or 516K x 219K (ATAC) matrices.
+    rna = _load_subset(rna_path, "RNA", cell_type_col, cell_types)
+    atac = _load_subset(atac_path, "ATAC", cell_type_col, cell_types)
 
     # Standardize cell type column
     rna.obs["cell_type"] = rna.obs[cell_type_col].values
@@ -626,67 +642,116 @@ if __name__ == "__main__":
         sys.exit(0)
 
     # ----------------------------------------------------------------
-    # Phase 0c-e: Load, filter, split, classify, QC
+    # Phase 0c: Load RNA, split by modality, save, free memory
+    # ----------------------------------------------------------------
+    # Process one file at a time so we never hold both full matrices.
+    import gc
+
+    logger.info("\n" + "=" * 60)
+    logger.info("Phase 0c: Load + split RNA")
+    logger.info("=" * 60)
+
+    logger.info("Loading full RNA h5ad...")
+    rna = ad.read_h5ad(rna_path)
+    rna.obs["cell_type"] = rna.obs[CELL_TYPE_COL]
+    logger.info(f"  RNA: {rna.shape}")
+
+    rna_multi_mask = rna.obs[MODALITY_COL] == MULTIOME_VALUE
+    rna_obs = rna.obs.copy()  # keep metadata for barcode matching later
+
+    # Save unpaired RNA
+    logger.info("  Writing unpaired RNA...")
+    rna_unpaired = rna[~rna_multi_mask].copy()
+    rna_unpaired.write_h5ad(out_dir / "seaad_unpaired_rna.h5ad")
+    logger.info(f"  Saved seaad_unpaired_rna.h5ad: {rna_unpaired.shape}")
+    unpaired_rna_obs = rna_unpaired.obs.copy()
+    del rna_unpaired
+
+    # Save multiome RNA (before barcode matching — will rewrite after ATAC)
+    logger.info("  Writing multiome RNA...")
+    rna_multi = rna[rna_multi_mask].copy()
+    rna_multi_names = set(rna_multi.obs_names)
+    rna_multi.write_h5ad(out_dir / "seaad_paired_rna_all.h5ad")
+    logger.info(f"  Saved seaad_paired_rna_all.h5ad: {rna_multi.shape}")
+    del rna_multi, rna
+    gc.collect()
+
+    # ----------------------------------------------------------------
+    # Phase 0d: Load ATAC, split by modality, save, free memory
     # ----------------------------------------------------------------
     logger.info("\n" + "=" * 60)
-    logger.info("Phase 0c: Loading and filtering")
+    logger.info("Phase 0d: Load + split ATAC")
     logger.info("=" * 60)
 
-    rna, atac = load_seaad(
-        rna_path, atac_path,
-        cell_types=SEAAD_CELL_TYPES,
-        cell_type_col=CELL_TYPE_COL,
+    logger.info("Loading full ATAC h5ad...")
+    atac = ad.read_h5ad(atac_path)
+    atac.obs["cell_type"] = atac.obs[CELL_TYPE_COL]
+    logger.info(f"  ATAC: {atac.shape}")
+
+    atac_multi_mask = atac.obs[MODALITY_COL] == MULTIOME_VALUE
+
+    # Save unpaired ATAC
+    logger.info("  Writing unpaired ATAC...")
+    atac_unpaired = atac[~atac_multi_mask].copy()
+    atac_unpaired.write_h5ad(out_dir / "seaad_unpaired_atac.h5ad")
+    logger.info(f"  Saved seaad_unpaired_atac.h5ad: {atac_unpaired.shape}")
+    unpaired_atac_obs = atac_unpaired.obs.copy()
+    del atac_unpaired
+
+    # Barcode matching for paired cells
+    atac_multi = atac[atac_multi_mask].copy()
+    del atac
+    gc.collect()
+
+    shared_barcodes = sorted(rna_multi_names & set(atac_multi.obs_names))
+    logger.info(
+        f"  Barcode matching: {len(shared_barcodes):,} shared "
+        f"(RNA multi: {len(rna_multi_names):,}, ATAC multi: {atac_multi.n_obs:,})"
     )
 
-    logger.info("\n" + "=" * 60)
-    logger.info("Phase 0d: Splitting by modality")
-    logger.info("=" * 60)
+    # Save matched paired ATAC
+    logger.info("  Writing paired ATAC...")
+    atac_paired = atac_multi[shared_barcodes].copy()
+    atac_paired.write_h5ad(out_dir / "seaad_paired_atac.h5ad")
+    logger.info(f"  Saved seaad_paired_atac.h5ad: {atac_paired.shape}")
 
-    # Use the best pairing key from the audit
-    pairing_key = None
-    if pairing["best_overlap_pct"] >= 90 and pairing["best_key"] != "obs_names":
-        # Extract the obs column name from the compound key name
-        # e.g., "sample_id+barcode" -> "sample_id"
-        key_parts = pairing["best_key"].replace("+barcode", "").split("+")
-        if len(key_parts) == 1 and key_parts[0] in rna.obs.columns:
-            pairing_key = key_parts[0]
+    # Verify cell type agreement
+    rna_ct = rna_obs.loc[shared_barcodes, CELL_TYPE_COL].values
+    atac_ct = atac_paired.obs[CELL_TYPE_COL].values
+    agree = (rna_ct == atac_ct).mean() * 100
+    logger.info(f"  Paired cell type agreement: {agree:.1f}%")
+    del atac_multi, atac_paired
+    gc.collect()
 
-    splits = split_by_modality(
-        rna, atac,
-        modality_col=MODALITY_COL,
-        multiome_value=MULTIOME_VALUE,
-        pairing_key_col=pairing_key,
-    )
+    # Rewrite paired RNA to matched barcodes only
+    logger.info("  Rewriting paired RNA to matched barcodes...")
+    rna_paired_all = ad.read_h5ad(out_dir / "seaad_paired_rna_all.h5ad")
+    rna_paired = rna_paired_all[shared_barcodes].copy()
+    rna_paired.write_h5ad(out_dir / "seaad_paired_rna.h5ad")
+    logger.info(f"  Saved seaad_paired_rna.h5ad: {rna_paired.shape}")
+    del rna_paired_all, rna_paired
+    (out_dir / "seaad_paired_rna_all.h5ad").unlink()
 
+    # ----------------------------------------------------------------
+    # Phase 0e: Donor classification + QC
+    # ----------------------------------------------------------------
     logger.info("\n" + "=" * 60)
     logger.info("Phase 0e: Donor classification")
     logger.info("=" * 60)
 
-    donor_info = classify_donors(
-        splits["unpaired_rna"],
-        splits["unpaired_atac"],
-        donor_col=DONOR_COL,
-    )
+    rna_stub = ad.AnnData(obs=unpaired_rna_obs)
+    atac_stub = ad.AnnData(obs=unpaired_atac_obs)
 
-    qc_summary(splits, donor_col=DONOR_COL)
-
-    # ----------------------------------------------------------------
-    # Save outputs
-    # ----------------------------------------------------------------
-    logger.info("\n" + "=" * 60)
-    logger.info("Saving outputs")
-    logger.info("=" * 60)
-
-    if "paired_rna" in splits:
-        splits["paired_rna"].write_h5ad(out_dir / "seaad_paired_rna.h5ad")
-        splits["paired_atac"].write_h5ad(out_dir / "seaad_paired_atac.h5ad")
-        logger.info(f"  Saved paired RNA/ATAC to {out_dir}")
-
-    splits["unpaired_rna"].write_h5ad(out_dir / "seaad_unpaired_rna.h5ad")
-    splits["unpaired_atac"].write_h5ad(out_dir / "seaad_unpaired_atac.h5ad")
-    logger.info(f"  Saved unpaired RNA/ATAC to {out_dir}")
-
+    donor_info = classify_donors(rna_stub, atac_stub, donor_col=DONOR_COL)
     donor_info.to_csv(out_dir / "seaad_donor_classification.csv")
     logger.info(f"  Saved donor classification to {out_dir}")
+
+    # QC summary
+    logger.info(f"\n  Paired cell types:")
+    logger.info(f"    {rna_obs.loc[shared_barcodes, CELL_TYPE_COL].value_counts().to_dict()}")
+    logger.info(f"  Unpaired RNA cell types:")
+    logger.info(f"    {unpaired_rna_obs['cell_type'].value_counts().to_dict()}")
+    logger.info(f"  Unpaired ATAC cell types:")
+    logger.info(f"    {unpaired_atac_obs['cell_type'].value_counts().to_dict()}")
 
     logger.info("\nDone.")
