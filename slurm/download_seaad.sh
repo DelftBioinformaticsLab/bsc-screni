@@ -35,11 +35,11 @@ echo "Started: $(date)"
 
 echo ""
 echo "=== Listing MTG/RNAseq/ ==="
-aws s3 ls --no-sign-request "${BUCKET}/MTG/RNAseq/" | head -20
+pixi run aws s3 ls --no-sign-request "${BUCKET}/MTG/RNAseq/" | head -20
 
 echo ""
 echo "=== Listing MTG/ATACseq/ ==="
-aws s3 ls --no-sign-request "${BUCKET}/MTG/ATACseq/" | head -20
+pixi run aws s3 ls --no-sign-request "${BUCKET}/MTG/ATACseq/" | head -20
 
 # ===========================================================================
 #  Download RNA h5ad (~20 GB)
@@ -50,7 +50,7 @@ echo "=== Downloading RNA h5ad ==="
 
 RNA_FILE="SEAAD_MTG_RNAseq_final-nuclei.2024-02-13.h5ad"
 if [ ! -f "$RNA_FILE" ]; then
-    aws s3 cp --no-sign-request \
+    pixi run aws s3 cp --no-sign-request \
         "${BUCKET}/MTG/RNAseq/${RNA_FILE}" \
         "$RNA_FILE"
 else
@@ -68,7 +68,7 @@ echo "=== Downloading ATAC h5ad ==="
 # Try the most likely filename; adjust based on bucket listing output
 ATAC_FILE="SEAAD_MTG_ATACseq_final-nuclei.2024-02-13.h5ad"
 if [ ! -f "$ATAC_FILE" ]; then
-    aws s3 cp --no-sign-request \
+    pixi run aws s3 cp --no-sign-request \
         "${BUCKET}/MTG/ATACseq/${ATAC_FILE}" \
         "$ATAC_FILE" \
     || {
