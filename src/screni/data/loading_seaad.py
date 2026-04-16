@@ -106,6 +106,16 @@ def inspect_seaad(
                     for val, count in vc.tail(5).items():
                         logger.info(f"      {val}: {count:,}")
 
+        # Layers (where raw counts might be)
+        if adata.layers:
+            logger.info(f"\n  layers keys: {list(adata.layers.keys())}")
+        else:
+            logger.info(f"\n  layers: none")
+
+        # X_normalization (if present)
+        if "X_normalization" in adata.uns:
+            logger.info(f"  X_normalization: {adata.uns['X_normalization']}")
+
         # Donor x method cross-tab (critical for understanding overlap)
         if "method" in adata.obs.columns and "Donor ID" in adata.obs.columns:
             crosstab = pd.crosstab(adata.obs["Donor ID"], adata.obs["method"])

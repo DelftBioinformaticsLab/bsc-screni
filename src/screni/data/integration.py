@@ -80,9 +80,13 @@ def integrate_paired(
     logger.info("  Step 1: RNA preprocessing...")
     rna = rna.copy()
     rna.layers["counts"] = rna.X.copy()
+    # Filter genes expressed in very few cells (avoids LOESS singularity
+    # in seurat_v3 VST, especially with batch_key on many small batches)
+    sc.pp.filter_genes(rna, min_cells=3)
     sc.pp.normalize_total(rna, target_sum=1e4)
     sc.pp.log1p(rna)
-    hvg_kw = dict(n_top_genes=n_hvgs, flavor="seurat_v3", layer="counts")
+    hvg_kw = dict(n_top_genes=n_hvgs, flavor="seurat_v3", layer="counts",
+                  span=0.3)
     if batch_key is not None:
         hvg_kw["batch_key"] = batch_key
     sc.pp.highly_variable_genes(rna, **hvg_kw)

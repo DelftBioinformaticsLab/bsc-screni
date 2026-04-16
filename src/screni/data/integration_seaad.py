@@ -36,11 +36,32 @@ import scipy.sparse as sp
 from scipy.spatial.distance import cdist
 
 from screni.data.integration import integrate_paired
-from screni.data.integration_retinal import compute_gene_activity
+from screni.data.utils import compute_gene_activity
 from screni.data.loading_seaad import MIN_CELLS_PER_DONOR
 from screni.data.utils import load_gene_annotations
 
 logger = logging.getLogger(__name__)
+
+# Layer names to try for raw counts (SEA-AD ships normalized .X)
+_RAW_LAYER_CANDIDATES = ["UMIs", "UMI", "raw", "counts", "raw_counts"]
+
+
+def _swap_to_raw_counts(adata: ad.AnnData, label: str = "") -> None:
+    """Replace .X with raw counts from a layer, if available.
+
+    SEA-AD stores normalized data in .X and raw UMI counts in a layer.
+    Many functions (HVG selection, gene activity) need raw counts.
+    """
+    for candidate in _RAW_LAYER_CANDIDATES:
+        if candidate in adata.layers:
+            logger.info(f"  {label}: using .layers['{candidate}'] as raw counts")
+            adata.X = adata.layers[candidate].copy()
+            return
+    logger.warning(
+        f"  {label}: no raw count layer found "
+        f"(layers: {list(adata.layers.keys()) if adata.layers else 'none'}). "
+        f"Using .X as-is."
+    )
 
 
 # =========================================================================
@@ -77,6 +98,11 @@ def integrate_seaad_paired(
         f"  {paired_rna.n_obs} cells, "
         f"{paired_rna.obs['Donor ID'].nunique()} donors"
     )
+
+    # SEA-AD ships normalized data in .X; raw counts are in a layer.
+    # integrate_paired() expects raw counts in .X.
+    _swap_to_raw_counts(paired_rna, "RNA")
+    _swap_to_raw_counts(paired_atac, "ATAC")
 
     mdata = integrate_paired(
         paired_rna, paired_atac,
@@ -438,6 +464,8 @@ if __name__ == "__main__":
     logger.info(
         f"Loaded unpaired RNA: {unpaired_rna.shape}, ATAC: {unpaired_atac.shape}"
     )
+    _swap_to_raw_counts(unpaired_rna, "Unpaired RNA")
+    _swap_to_raw_counts(unpaired_atac, "Unpaired ATAC")
 
     merged, pairs = integrate_seaad_unpaired(
         unpaired_rna, unpaired_atac,
