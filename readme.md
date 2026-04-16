@@ -5,7 +5,8 @@
 ## 1. Log in to the cluster
 
 ```bash
-ssh <your-student-name>@<cluster-address>
+ssh [netID]@login.daic.tudelft.nl
+login using netID password​
 ```
 
 ## 2. Download and install Miniforge
