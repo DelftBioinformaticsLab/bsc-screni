@@ -42,6 +42,7 @@ def integrate_paired(
     n_pcs: int = DEFAULT_N_PCS,
     n_neighbors: int = DEFAULT_KNN,
     leiden_resolution: float = DEFAULT_LEIDEN_RESOLUTION,
+    batch_key: str | None = None,
 ) -> mu.MuData:
     """Integrate paired scRNA-seq and scATAC-seq via WNN.
 
@@ -60,6 +61,11 @@ def integrate_paired(
         Number of nearest neighbors for WNN.
     leiden_resolution
         Resolution for Leiden clustering on the WNN graph.
+    batch_key
+        Optional obs column for batch-aware HVG selection (e.g. 'donor_id'
+        for multi-donor datasets). When set, ``highly_variable_genes``
+        selects genes that are variable across batches rather than
+        dominated by a single batch.
 
     Returns
     -------
@@ -76,7 +82,10 @@ def integrate_paired(
     rna.layers["counts"] = rna.X.copy()
     sc.pp.normalize_total(rna, target_sum=1e4)
     sc.pp.log1p(rna)
-    sc.pp.highly_variable_genes(rna, n_top_genes=n_hvgs, flavor="seurat_v3", layer="counts")
+    hvg_kw = dict(n_top_genes=n_hvgs, flavor="seurat_v3", layer="counts")
+    if batch_key is not None:
+        hvg_kw["batch_key"] = batch_key
+    sc.pp.highly_variable_genes(rna, **hvg_kw)
     sc.pp.scale(rna)
     sc.tl.pca(rna, n_comps=50)
     logger.info(f"  RNA: {rna.shape}, {n_hvgs} HVGs, PCA done (50 comps)")

@@ -31,7 +31,7 @@ from scipy.spatial.distance import cdist
 from sklearn.neighbors import NearestNeighbors
 from sklearn.preprocessing import normalize
 
-from screni.data.utils import peaks_to_dataframe
+from screni.data.utils import load_gene_annotations, peaks_to_dataframe
 
 logger = logging.getLogger(__name__)
 
@@ -538,56 +538,6 @@ def pair_rna_atac_cells(merged: ad.AnnData) -> pd.DataFrame:
     logger.info(f"  Paired cell types (from ATAC):\n{ct_counts.to_string()}")
 
     return pairs
-
-
-# =========================================================================
-#  Convenience: load GTF
-# =========================================================================
-
-
-def load_gene_annotations(gtf_path: str) -> pd.DataFrame:
-    """Load gene annotations from an Ensembl GTF file."""
-    import gzip
-    from pathlib import Path
-
-    gtf_path = Path(gtf_path)
-    logger.info(f"Loading gene annotations from {gtf_path.name}...")
-
-    records = []
-    opener = gzip.open if gtf_path.suffix == ".gz" else open
-
-    with opener(str(gtf_path), "rt") as f:
-        for line in f:
-            if line.startswith("#"):
-                continue
-            parts = line.strip().split("\t")
-            if len(parts) < 9 or parts[2] != "gene":
-                continue
-
-            chrom = parts[0]
-            if not chrom.startswith("chr"):
-                chrom = f"chr{chrom}"
-
-            attrs = parts[8]
-            gene_name = None
-            for attr in attrs.split(";"):
-                attr = attr.strip()
-                if attr.startswith('gene_name "'):
-                    gene_name = attr.split('"')[1]
-                    break
-
-            if gene_name:
-                records.append({
-                    "Chromosome": chrom,
-                    "Start": int(parts[3]),
-                    "End": int(parts[4]),
-                    "Strand": parts[6],
-                    "gene_name": gene_name,
-                })
-
-    df = pd.DataFrame(records)
-    logger.info(f"  Loaded {len(df)} gene annotations")
-    return df
 
 
 # =========================================================================

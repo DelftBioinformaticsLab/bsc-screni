@@ -15,6 +15,10 @@ setup-dev = "pip install -e ."
 process = { cmd = "python -m screni.data.loading", env = { PYTHONPATH = "src" } }
 integrate-pbmc = { cmd = "python -m screni.data.integration", env = { PYTHONPATH = "src" } }
 integrate-retinal = { cmd = "python -m screni.data.integration_retinal", env = { PYTHONPATH = "src" } }
+feature-select = { cmd = "python -m screni.data.feature_selection", env = { PYTHONPATH = "src" } }
+load-seaad = { cmd = "python -m screni.data.loading_seaad", env = { PYTHONPATH = "src" } }
+integrate-seaad = { cmd = "python -m screni.data.integration_seaad", env = { PYTHONPATH = "src" } }
+gene-peak = { cmd = "python -m screni.data.gene_peak_relations", env = { PYTHONPATH = "src" } }
 
 [dependencies]
 ipykernel = "*"
@@ -38,12 +42,15 @@ pytest-cov = ">=4.0"
 muon = ">=0.1.6"
 harmonypy = ">=0.0.9"
 celltypist = ">=1.6.0"
+rdata = ">=0.11"                    # Read R .rds files (TRANSFAC PWMs)
 
 [target.linux-64.dependencies]
 scikit-misc = ">=0.1.4,<0.2"
 
 [target.win-64.pypi-dependencies]
 scikit-misc = ">=0.1.4"       # conda build broken on Windows, pip works
+pyfaidx = ">=0.7.0"           # Pure Python, works on Windows too
 
 [target.linux-64.pypi-dependencies]
 pyfaidx = ">=0.7.0"           # Genome FASTA indexing (pure Python, pip only)
+MOODS-python = ">=1.9.4"      # Exact motif p-value matching (C extension, Linux only)

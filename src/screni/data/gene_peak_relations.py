@@ -1,6 +1,6 @@
 """Phase 3: Gene-peak-TF relationship inference.
 
-Establishes regulatory triplets (TF → peak → target gene) that constrain
+Establishes regulatory triplets (TF -> peak -> target gene) that constrain
 the random forest model in wScReNI.
 
 Matches the original R functions:
@@ -26,7 +26,7 @@ import pandas as pd
 import scipy.sparse as sp
 from scipy.stats import spearmanr
 
-from screni.data.utils import parse_peak_name, peaks_to_dataframe
+from screni.data.utils import load_gene_annotations, parse_peak_name, peaks_to_dataframe
 
 logger = logging.getLogger(__name__)
 
@@ -41,71 +41,6 @@ DEFAULT_NOISE_SD = 1e-5
 # =========================================================================
 #  3a. Peak-gene overlap (genomic proximity)
 # =========================================================================
-
-
-def load_gene_annotations(gtf_path: Path | str) -> pd.DataFrame:
-    """Load gene annotations from an Ensembl GTF file.
-
-    Extracts gene-level records with TSS coordinates.
-
-    Returns
-    -------
-    DataFrame with columns: Chromosome, Start, End, Strand, gene_name, gene_id.
-    """
-    import gzip
-
-    gtf_path = Path(gtf_path)
-    logger.info(f"Loading gene annotations from {gtf_path.name}...")
-
-    records = []
-    opener = gzip.open if gtf_path.suffix == ".gz" else open
-
-    with opener(str(gtf_path), "rt") as f:
-        for line in f:
-            if line.startswith("#"):
-                continue
-            parts = line.strip().split("\t")
-            if len(parts) < 9:
-                continue
-            if parts[2] != "gene":
-                continue
-
-            chrom = parts[0]
-            # Ensembl GTFs may not have 'chr' prefix
-            if not chrom.startswith("chr"):
-                chrom = f"chr{chrom}"
-
-            start = int(parts[3])
-            end = int(parts[4])
-            strand = parts[6]
-
-            # Parse attributes
-            attrs = parts[8]
-            gene_name = _parse_gtf_attr(attrs, "gene_name")
-            gene_id = _parse_gtf_attr(attrs, "gene_id")
-
-            if gene_name:
-                records.append({
-                    "Chromosome": chrom,
-                    "Start": start,
-                    "End": end,
-                    "Strand": strand,
-                    "gene_name": gene_name,
-                    "gene_id": gene_id or "",
-                })
-
-    df = pd.DataFrame(records)
-    logger.info(f"  Loaded {len(df)} gene annotations")
-    return df
-
-
-def _parse_gtf_attr(attr_string: str, key: str) -> str | None:
-    """Extract a value from a GTF attribute string."""
-    for attr in attr_string.split(";"):
-        attr = attr.strip()
-        if attr.startswith(f'{key} "'):
-            return attr.split('"')[1]
-    return None
 
 
 def find_peak_gene_overlaps(
@@ -147,14 +82,26 @@ def find_peak_gene_overlaps(
     ].copy().reset_index(drop=True)
     logger.info(f"  Genes with annotations: {len(gene_ann)} / {len(hvg_names)}")
 
-    # Compute TSS and extend
-    tss = gene_ann["Start"].copy()
-    minus_mask = gene_ann["Strand"] == "-"
-    tss[minus_mask] = gene_ann.loc[minus_mask, "End"]
+    # Compute TSS and extend window.
+    # For plus-strand genes: TSS = Start, upstream is lower coords.
+    # For minus-strand genes: TSS = End, upstream is higher coords.
+    # R code: start = ifelse(strand=='-', end-downstream, start-upstream)
+    #          end   = ifelse(strand=='-', end+upstream,  start+downstream)
+    plus_mask = gene_ann["Strand"] != "-"
+    minus_mask = ~plus_mask
+
+    tss_start = pd.Series(0, index=gene_ann.index, dtype=int)
+    tss_end = pd.Series(0, index=gene_ann.index, dtype=int)
+
+    tss_start[plus_mask] = gene_ann.loc[plus_mask, "Start"] - upstream_bp
+    tss_end[plus_mask] = gene_ann.loc[plus_mask, "Start"] + downstream_bp
+
+    tss_start[minus_mask] = gene_ann.loc[minus_mask, "End"] - downstream_bp
+    tss_end[minus_mask] = gene_ann.loc[minus_mask, "End"] + upstream_bp
 
     gene_ann = gene_ann.assign(
-        tss_start=np.maximum(0, tss - upstream_bp).astype(int),
-        tss_end=(tss + downstream_bp).astype(int),
+        tss_start=np.maximum(0, tss_start).astype(int),
+        tss_end=tss_end.astype(int),
     )
 
     # Parse peak coordinates
@@ -217,7 +164,7 @@ def filter_by_correlation(
     rna_adata: ad.AnnData,
     atac_adata: ad.AnnData,
     threshold: float = DEFAULT_CORR_THRESHOLD,
-    min_nonzero_cells: int = 5,
+    min_nonzero_cells: int = 2,
 ) -> pd.DataFrame:
     """Filter gene-peak pairs by Spearman correlation.
 
@@ -318,98 +265,108 @@ def filter_by_correlation(
 # =========================================================================
 
 
-def load_jaspar_motifs(
-    jaspar_dir: Path | str,
-) -> list[tuple[str, str, list[list[float]]]]:
-    """Load JASPAR PFM motifs from a directory of .pfm or .jaspar files.
-
-    Can also load a single concatenated JASPAR-format file.
-
-    Returns list of (motif_id, tf_name, pfm_matrix) tuples.
-    Each pfm_matrix is a list of 4 lists (A, C, G, T counts per position).
-    """
-    jaspar_dir = Path(jaspar_dir)
-    motifs = []
-
-    if jaspar_dir.is_file():
-        files = [jaspar_dir]
-    else:
-        files = sorted(jaspar_dir.glob("*.jaspar")) + sorted(jaspar_dir.glob("*.pfm"))
-
-    for fpath in files:
-        with open(fpath) as f:
-            current_id = None
-            current_name = None
-            current_matrix: list[list[float]] = []
-
-            for line in f:
-                line = line.strip()
-                if line.startswith(">"):
-                    # Save previous motif
-                    if current_id and len(current_matrix) == 4:
-                        motifs.append((current_id, current_name or current_id, current_matrix))
-                    # Parse header: >MA0001.1 ARNT
-                    parts = line[1:].split()
-                    current_id = parts[0] if parts else "unknown"
-                    current_name = parts[1] if len(parts) > 1 else current_id
-                    current_matrix = []
-                elif line and not line.startswith("#"):
-                    # Parse row of counts: A [ 1 2 3 4 ]
-                    # Remove letter prefix and brackets
-                    cleaned = line.replace("[", "").replace("]", "")
-                    # Remove single-letter prefix if present (e.g., "A  1 2 3")
-                    tokens = cleaned.split()
-                    if tokens and tokens[0].isalpha() and len(tokens[0]) == 1:
-                        tokens = tokens[1:]
-                    try:
-                        row = [float(x) for x in tokens]
-                        if row:
-                            current_matrix.append(row)
-                    except ValueError:
-                        continue
-
-            # Don't forget last motif
-            if current_id and len(current_matrix) == 4:
-                motifs.append((current_id, current_name or current_id, current_matrix))
-
-    logger.info(f"  Loaded {len(motifs)} JASPAR motifs from {jaspar_dir}")
-    return motifs
-
-
-def _pfm_to_pwm(pfm: list[list[float]], pseudocount: float = 0.01) -> list[list[float]]:
-    """Convert a position frequency matrix to a position weight matrix (log-odds).
+def load_transfac_motifs(
+    rds_path: Path | str,
+    motif_db_path: Path | str,
+    gene_name_type: str = "symbol",
+) -> tuple[dict[str, np.ndarray], pd.DataFrame]:
+    """Load TRANSFAC PWMs and motif-to-TF mapping from the paper's files.
 
     Parameters
     ----------
-    pfm
-        4 x N matrix of counts (A, C, G, T).
-    pseudocount
-        Added to each count to avoid log(0).
+    rds_path
+        Path to ``all_motif_pwm.rds`` (R PWMatrixList).
+    motif_db_path
+        Path to ``Tranfac201803_*_MotifTFsFinal.txt`` (TSV mapping).
+    gene_name_type
+        Which column to use as TF name: 'symbol' uses the TFs column,
+        'id' uses EnsemblID.
 
     Returns
     -------
-    4 x N log-odds PWM.
+    Tuple of:
+        - pwm_dict: {accession: 4xN numpy array} (rows = A, C, G, T)
+        - motif_db: DataFrame with columns Accession, ID, Name, TFs, EnsemblID
     """
-    n_pos = len(pfm[0])
-    pwm = []
-    for base_idx in range(4):
-        row = []
-        for pos in range(n_pos):
-            total = sum(pfm[b][pos] + pseudocount for b in range(4))
-            freq = (pfm[base_idx][pos] + pseudocount) / total
-            row.append(np.log2(freq / 0.25))
-        pwm.append(row)
-    return pwm
+    import warnings
+
+    # Load motif database.  Two formats:
+    #   Mouse: plain TSV (tab-separated, no quotes)
+    #   Human: R-style write.table output (space-separated, quoted, row numbers)
+    motif_db_path = Path(motif_db_path)
+    with open(motif_db_path) as f:
+        first_line = f.readline()
+
+    if "\t" in first_line:
+        # Tab-separated (mouse)
+        motif_db = pd.read_csv(motif_db_path, sep="\t")
+    else:
+        # R-style write.table: "rownum" "Accession" "ID" "Name" "TFs" "EnsemblID"
+        # Split on '" "' to handle semicolons in TF fields.
+        rows = []
+        with open(motif_db_path) as f:
+            f.readline()  # skip header
+            for line in f:
+                parts = [p.strip().strip('"') for p in line.strip().split('" "')]
+                # Drop leading row-number (first part is always a digit)
+                if parts and parts[0].isdigit():
+                    parts = parts[1:]
+                if len(parts) >= 5:
+                    rows.append(parts[:5])
+        motif_db = pd.DataFrame(rows, columns=["Accession", "ID", "Name", "TFs", "EnsemblID"])
+
+    logger.info(f"  Loaded {len(motif_db)} motif-TF mappings from {motif_db_path.name}")
+
+    # Load PWMs from RDS
+    rds_path = Path(rds_path)
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        import rdata
+        parsed = rdata.read_rds(str(rds_path))
+
+    pwm_dict = {}
+    for accession, pwm_obj in parsed.listData.items():
+        # profileMatrix is an xarray DataArray with coords dim_0 = [A, C, G, T]
+        mat = pwm_obj.profileMatrix.values  # shape (4, N)
+        pwm_dict[str(accession)] = mat.astype(np.float64)
+
+    logger.info(f"  Loaded {len(pwm_dict)} PWMs from {rds_path.name}")
+
+    return pwm_dict, motif_db
+
+
+def _select_motifs(
+    motif_db: pd.DataFrame,
+    hvg_names: list[str] | set[str],
+    gene_name_type: str = "symbol",
+) -> pd.DataFrame:
+    """Pre-filter motifs to only those whose TFs are in the gene set.
+
+    Matches R's ``motifs_select()``.  The TFs column may contain
+    semicolon-separated gene names (one motif -> multiple TFs).
+    """
+    col = "TFs" if gene_name_type == "symbol" else "EnsemblID"
+    hvg_set = set(hvg_names)
+
+    mask = motif_db[col].apply(
+        lambda x: any(tf in hvg_set for tf in str(x).split(";"))
+    )
+    filtered = motif_db[mask].copy()
+    logger.info(
+        f"  motifs_select: {len(filtered)} / {len(motif_db)} motifs "
+        f"have a TF in the gene set"
+    )
+    return filtered
 
 
 def _scan_sequence_with_pwm(
     seq: str,
     pwm: np.ndarray,
     threshold: float,
-) -> list[tuple[int, float]]:
-    """Scan a DNA sequence with a PWM and return positions above threshold.
+) -> float:
+    """Scan a DNA sequence with a PWM and return the best score above threshold.
 
-    Pure numpy implementation - no C extensions needed.
+    Vectorized numpy implementation — scores all positions at once.
 
     Parameters
     ----------
@@ -422,73 +379,77 @@ def _scan_sequence_with_pwm(
 
     Returns
     -------
-    List of (position, score) tuples.
+    Best score above threshold, or -inf if no hit.
     """
-    base_to_idx = {"A": 0, "C": 1, "G": 2, "T": 3}
     w = pwm.shape[1]
+    n = len(seq)
 
-    if len(seq) < w:
-        return []
+    if n < w:
+        return -np.inf
 
-    # Encode sequence as integer array
-    encoded = np.array([base_to_idx.get(b, -1) for b in seq], dtype=np.int8)
+    # Encode sequence as integer array (A=0, C=1, G=2, T=3, other=-1)
+    _BASE_LUT = np.full(128, -1, dtype=np.int8)
+    _BASE_LUT[ord("A")] = 0
+    _BASE_LUT[ord("C")] = 1
+    _BASE_LUT[ord("G")] = 2
+    _BASE_LUT[ord("T")] = 3
+    encoded = _BASE_LUT[np.frombuffer(seq.encode("ascii"), dtype=np.uint8)]
 
-    hits = []
-    for i in range(len(seq) - w + 1):
-        window = encoded[i : i + w]
-        if np.any(window < 0):  # Skip windows with N's
-            continue
-        score = sum(pwm[window[j], j] for j in range(w))
-        if score >= threshold:
-            hits.append((i, score))
+    # Build a (n - w + 1, w) matrix of indices for sliding windows
+    n_windows = n - w + 1
+    window_idx = np.arange(w)[None, :] + np.arange(n_windows)[:, None]
+    windows = encoded[window_idx]  # (n_windows, w)
 
-    return hits
+    # Mask windows containing N's (encoded as -1)
+    valid = np.all(windows >= 0, axis=1)  # (n_windows,)
+    if not valid.any():
+        return -np.inf
+
+    # Score all valid windows at once using fancy indexing
+    valid_windows = windows[valid]  # (n_valid, w)
+    pos_idx = np.arange(w)[None, :]  # (1, w)
+    scores = pwm[valid_windows, pos_idx].sum(axis=1)  # (n_valid,)
+
+    best = scores.max()
+    return float(best) if best >= threshold else -np.inf
 
 
 def _estimate_pwm_threshold(pwm: np.ndarray, pvalue: float) -> float:
     """Estimate a PWM score threshold for a given p-value.
 
-    Uses the max-column approximation: for each position, takes the
-    distribution of scores and estimates the threshold from the total
-    score distribution assuming independence between positions.
-
-    For a more precise threshold, we'd need the full score distribution
-    (dynamic programming), but this approximation is sufficient and matches
-    the spirit of motifmatchr's approach.
+    Uses a normal approximation.  This is a fallback when MOODS is not
+    available — MOODS computes exact thresholds via dynamic programming.
     """
-    w = pwm.shape[1]
-    # Maximum possible score
-    max_score = np.sum(np.max(pwm, axis=0))
-    # Minimum possible score
-    min_score = np.sum(np.min(pwm, axis=0))
-    # Mean score under uniform background
     mean_score = np.sum(np.mean(pwm, axis=0))
-    # Approximate SD under uniform background
     var_per_pos = np.var(pwm, axis=0)
     sd_score = np.sqrt(np.sum(var_per_pos))
 
     if sd_score == 0:
-        return max_score
+        return float(np.sum(np.max(pwm, axis=0)))
 
-    # Use normal approximation: threshold = mean + z * sd
     from scipy.stats import norm
     z = norm.ppf(1 - pvalue)
     threshold = mean_score + z * sd_score
 
-    # Clamp to valid range
+    min_score = float(np.sum(np.min(pwm, axis=0)))
+    max_score = float(np.sum(np.max(pwm, axis=0)))
     return float(np.clip(threshold, min_score, max_score))
 
 
 def match_motifs_to_peaks(
     peak_names: list[str] | np.ndarray,
     genome_fasta: Path | str,
-    jaspar_motifs_path: Path | str,
+    pwm_dict: dict[str, np.ndarray],
+    motif_db: pd.DataFrame,
+    hvg_names: list[str] | set[str],
     pvalue_cutoff: float = DEFAULT_MOTIF_PVALUE,
+    gene_name_type: str = "symbol",
 ) -> pd.DataFrame:
     """Scan ATAC peaks for TF binding motifs.
 
     Matches ``Get_motif_peak_pair_df0()`` from the original R code.
-    Uses a pure-numpy PWM scanner (no C extensions required).
+    Uses MOODS (exact p-value thresholds) when available, falls back to
+    vectorized numpy scanning with a normal-approximation threshold.
 
     Parameters
     ----------
@@ -496,111 +457,144 @@ def match_motifs_to_peaks(
         ATAC peak names (format: chrX:start-end).
     genome_fasta
         Path to genome FASTA file (mm10 or hg38).
-    jaspar_motifs_path
-        Path to JASPAR motif file(s) (.jaspar or directory of .pfm files).
+    pwm_dict
+        {accession: 4xN numpy array} from ``load_transfac_motifs``.
+    motif_db
+        Motif-TF mapping DataFrame from ``load_transfac_motifs``.
+    hvg_names
+        HVG gene names — only motifs whose TF is in this set are scanned
+        (matching R's ``motifs_select``).
     pvalue_cutoff
         P-value threshold for motif matching (default: 5^-4 = 0.0016).
+    gene_name_type
+        'symbol' or 'id'.
 
     Returns
     -------
-    DataFrame with columns: TF, peak, motif_id, score.
+    DataFrame with columns: motif_id, peak.
     """
-    try:
-        from pyfaidx import Fasta
-    except ImportError:
-        raise ImportError(
-            "pyfaidx is required for genome sequence extraction. "
-            "Install with: pip install pyfaidx"
-        )
+    from pyfaidx import Fasta
 
     genome_fasta = Path(genome_fasta)
+
+    # Pre-filter motifs to those whose TFs are in the gene set
+    filtered_db = _select_motifs(motif_db, hvg_names, gene_name_type)
+    motif_accessions = set(filtered_db["Accession"])
+    pwms_to_scan = {
+        acc: pwm_dict[acc]
+        for acc in motif_accessions
+        if acc in pwm_dict
+    }
     logger.info(
-        f"Scanning {len(peak_names)} peaks for motifs "
+        f"Scanning {len(peak_names)} peaks with {len(pwms_to_scan)} motifs "
         f"(p-value cutoff: {pvalue_cutoff})..."
     )
+
+    if not pwms_to_scan:
+        logger.warning("  No motifs to scan!")
+        return pd.DataFrame(columns=["motif_id", "peak"])
 
     # Load genome
     genome = Fasta(str(genome_fasta))
 
-    # Load JASPAR motifs and convert to PWMs
-    jaspar_motifs = load_jaspar_motifs(jaspar_motifs_path)
-    if not jaspar_motifs:
-        raise ValueError(f"No motifs loaded from {jaspar_motifs_path}")
-
-    # Build PWM arrays and thresholds
-    motif_data = []  # (motif_id, tf_name, pwm_fwd, pwm_rc, threshold)
-    for motif_id, tf_name, pfm in jaspar_motifs:
-        pwm = np.array(_pfm_to_pwm(pfm))  # shape: (4, W)
-        threshold = _estimate_pwm_threshold(pwm, pvalue_cutoff)
-        # Reverse complement: reverse columns, swap A<->T and C<->G (rows 0<->3, 1<->2)
-        pwm_rc = pwm[[3, 2, 1, 0], ::-1]
-        motif_data.append((motif_id, tf_name, pwm, pwm_rc, threshold))
-
-    logger.info(f"  Prepared {len(motif_data)} motifs with score thresholds")
-
-    # Scan each peak sequence
-    results = []
-    n_scanned = 0
-
+    # Extract peak sequences
+    sequences = []
+    valid_peaks = []
     for peak in peak_names:
         try:
             chrom, start, end = parse_peak_name(peak)
         except ValueError:
             continue
-
         if chrom not in genome:
             continue
-
         chrom_len = len(genome[chrom])
         start = max(0, start)
         end = min(end, chrom_len)
         seq = str(genome[chrom][start:end]).upper()
+        if seq:
+            sequences.append(seq)
+            valid_peaks.append(peak)
 
-        if len(seq) == 0:
-            continue
+    logger.info(f"  Extracted {len(sequences)} peak sequences")
 
-        for motif_id, tf_name, pwm_fwd, pwm_rc, threshold in motif_data:
-            # Scan forward strand
-            hits_fwd = _scan_sequence_with_pwm(seq, pwm_fwd, threshold)
-            # Scan reverse complement
-            hits_rc = _scan_sequence_with_pwm(seq, pwm_rc, threshold)
+    # Try MOODS (exact p-value via DP), fall back to numpy scanner
+    try:
+        import MOODS.scan
+        import MOODS.tools
+        use_moods = True
+    except ImportError:
+        use_moods = False
 
-            best_score = -np.inf
-            if hits_fwd:
-                best_score = max(best_score, max(s for _, s in hits_fwd))
-            if hits_rc:
-                best_score = max(best_score, max(s for _, s in hits_rc))
+    results = []
+    accessions = sorted(pwms_to_scan.keys())
 
-            if best_score > -np.inf:
-                results.append({
-                    "TF": tf_name,
-                    "peak": peak,
-                    "motif_id": motif_id,
-                    "score": best_score,
-                })
+    if use_moods:
+        logger.info("  Using MOODS for exact p-value matching")
+        bg = [0.25, 0.25, 0.25, 0.25]
 
-        n_scanned += 1
-        if n_scanned % 1000 == 0:
-            logger.info(f"  Scanned {n_scanned} / {len(peak_names)} peaks...")
+        # Prepare matrices: for each motif, forward + reverse complement
+        matrices = []
+        matrix_accessions = []  # track which accession each matrix pair belongs to
+        for acc in accessions:
+            pwm = pwms_to_scan[acc]
+            # MOODS expects list-of-lists, rows = A/C/G/T
+            mat = [pwm[i].tolist() for i in range(4)]
+            mat_rc = [pwm[3 - i][::-1].tolist() for i in range(4)]
+            matrices.extend([mat, mat_rc])
+            matrix_accessions.extend([acc, acc])
 
-    logger.info(f"  Scanned {n_scanned} peaks total")
+        # Compute exact thresholds
+        thresholds = [
+            MOODS.tools.threshold_from_p(m, bg, pvalue_cutoff)
+            for m in matrices
+        ]
+
+        # Scan all sequences
+        scanner = MOODS.scan.Scanner(7)
+        scanner.set_motifs(matrices, bg, thresholds)
+
+        for i, seq in enumerate(sequences):
+            hits = scanner.scan(seq)
+            # hits is a list of lists, one per matrix
+            for j in range(0, len(hits), 2):  # step by 2 (fwd + rc)
+                if hits[j] or hits[j + 1]:
+                    acc_idx = j // 2
+                    results.append({
+                        "motif_id": accessions[acc_idx],
+                        "peak": valid_peaks[i],
+                    })
+            if (i + 1) % 500 == 0:
+                logger.info(f"  Scanned {i + 1} / {len(sequences)} peaks...")
+    else:
+        logger.info("  MOODS not available, using numpy fallback (approximate thresholds)")
+        # Precompute thresholds and reverse complements
+        motif_data = []
+        for acc in accessions:
+            pwm = pwms_to_scan[acc]
+            threshold = _estimate_pwm_threshold(pwm, pvalue_cutoff)
+            pwm_rc = pwm[[3, 2, 1, 0], ::-1]
+            motif_data.append((acc, pwm, pwm_rc, threshold))
+
+        for i, seq in enumerate(sequences):
+            for acc, pwm_fwd, pwm_rc, threshold in motif_data:
+                score_fwd = _scan_sequence_with_pwm(seq, pwm_fwd, threshold)
+                score_rc = _scan_sequence_with_pwm(seq, pwm_rc, threshold)
+                if max(score_fwd, score_rc) > -np.inf:
+                    results.append({"motif_id": acc, "peak": valid_peaks[i]})
+            if (i + 1) % 500 == 0:
+                logger.info(f"  Scanned {i + 1} / {len(sequences)} peaks...")
+
+    logger.info(f"  Scanned {len(sequences)} peaks total")
 
     result_df = pd.DataFrame(results)
     if len(result_df) > 0:
-        result_df = result_df.drop_duplicates(subset=["TF", "peak"], keep="first")
+        result_df = result_df.drop_duplicates()
 
     logger.info(
-        f"  Found {len(result_df)} TF-peak matches "
-        f"({result_df['TF'].nunique() if len(result_df) > 0 else 0} unique TFs, "
+        f"  Found {len(result_df)} motif-peak matches "
+        f"({result_df['motif_id'].nunique() if len(result_df) > 0 else 0} unique motifs, "
         f"{result_df['peak'].nunique() if len(result_df) > 0 else 0} unique peaks)"
     )
-
-    if len(result_df) > 0:
-        matches_per_peak = result_df.groupby("peak").size()
-        logger.info(
-            f"  Motifs per peak: median={matches_per_peak.median():.0f}, "
-            f"mean={matches_per_peak.mean():.0f}"
-        )
 
     return result_df
 
@@ -613,20 +607,28 @@ def match_motifs_to_peaks(
 def assemble_triplets(
     correlated_pairs: pd.DataFrame,
     motif_matches: pd.DataFrame,
+    motif_db: pd.DataFrame,
     hvg_names: list[str] | np.ndarray,
+    gene_name_type: str = "symbol",
 ) -> tuple[pd.DataFrame, pd.DataFrame]:
     """Combine correlated gene-peak pairs with motif matches into triplets.
 
     Matches ``peak_gene_TF_match()`` from the original R code.
+    Uses the TRANSFAC motif_database to map motif accessions -> TF gene names,
+    exactly as R's ``get_TF_motif_pair()`` + ``merge()`` does.
 
     Parameters
     ----------
     correlated_pairs
         DataFrame with columns: gene, peak, spearman_r.
     motif_matches
-        DataFrame with columns: TF, peak, motif_id.
+        DataFrame with columns: motif_id, peak.
+    motif_db
+        TRANSFAC motif database with columns Accession, TFs, EnsemblID.
     hvg_names
         List of all HVG names (to determine which TFs are in our gene set).
+    gene_name_type
+        'symbol' uses TFs column, 'id' uses EnsemblID.
 
     Returns
     -------
@@ -638,17 +640,31 @@ def assemble_triplets(
     logger.info("Assembling TF-peak-gene triplets...")
 
     hvg_set = set(hvg_names)
+    tf_col = "TFs" if gene_name_type == "symbol" else "EnsemblID"
 
-    # Inner join: correlate gene-peak pairs with motif matches
-    # Only keep triplets where the TF is also in our HVG set
-    motif_in_hvg = motif_matches[motif_matches["TF"].isin(hvg_set)].copy()
+    # Build motif_id -> TF mapping (matching R's get_TF_motif_pair).
+    # Each motif can map to multiple TFs (semicolon-separated).
+    tf_motif_pairs = []
+    for _, row in motif_db.iterrows():
+        accession = row["Accession"]
+        for tf in str(row[tf_col]).split(";"):
+            tf = tf.strip()
+            if tf and tf in hvg_set:
+                tf_motif_pairs.append({"motif_id": accession, "TF": tf})
+    tf_motif_df = pd.DataFrame(tf_motif_pairs).drop_duplicates()
     logger.info(
-        f"  TFs in HVG set: {motif_in_hvg['TF'].nunique()} / "
-        f"{motif_matches['TF'].nunique()} total TFs"
+        f"  TF-motif pairs in HVG set: {len(tf_motif_df)} "
+        f"({tf_motif_df['TF'].nunique()} unique TFs)"
     )
 
+    # Join: motif_matches (motif_id, peak) + tf_motif_df (motif_id, TF)
+    # -> (TF, peak)
+    tf_peak = motif_matches.merge(tf_motif_df, on="motif_id", how="inner")
+    tf_peak = tf_peak[["TF", "peak"]].drop_duplicates()
+
+    # Join with correlated_pairs (gene, peak) -> triplets (TF, peak, target_gene)
     triplets = correlated_pairs.merge(
-        motif_in_hvg[["TF", "peak", "motif_id"]],
+        tf_peak,
         on="peak",
         how="inner",
     )
@@ -659,7 +675,7 @@ def assemble_triplets(
 
     logger.info(
         f"  Assembled {len(triplets)} triplets "
-        f"({triplets['TF'].nunique()} TFs → {triplets['target_gene'].nunique()} targets "
+        f"({triplets['TF'].nunique()} TFs -> {triplets['target_gene'].nunique()} targets "
         f"via {triplets['peak'].nunique()} peaks)"
     )
 
@@ -788,11 +804,13 @@ def run_phase3(
     atac_adata: ad.AnnData,
     gene_annotations: pd.DataFrame,
     genome_fasta: Path | str | None = None,
-    jaspar_motifs_path: Path | str | None = None,
+    pwm_dict: dict[str, np.ndarray] | None = None,
+    motif_db: pd.DataFrame | None = None,
     upstream_bp: int = DEFAULT_UPSTREAM_BP,
     downstream_bp: int = DEFAULT_DOWNSTREAM_BP,
     corr_threshold: float = DEFAULT_CORR_THRESHOLD,
     motif_pvalue: float = DEFAULT_MOTIF_PVALUE,
+    gene_name_type: str = "symbol",
     output_dir: Path | str | None = None,
     prefix: str = "retinal",
 ) -> dict:
@@ -807,15 +825,19 @@ def run_phase3(
     gene_annotations
         Gene body coordinates from GTF.
     genome_fasta
-        Path to genome FASTA (required for motif matching, optional otherwise).
-    jaspar_motifs_path
-        Path to JASPAR motif file(s) (required for motif matching).
+        Path to genome FASTA (required for motif matching).
+    pwm_dict
+        TRANSFAC PWMs from ``load_transfac_motifs`` (required for motif matching).
+    motif_db
+        TRANSFAC motif database from ``load_transfac_motifs`` (required for motif matching).
     upstream_bp, downstream_bp
         TSS window for peak-gene overlap.
     corr_threshold
         Minimum |Spearman r| for gene-peak pairs.
     motif_pvalue
         P-value cutoff for motif matching.
+    gene_name_type
+        'symbol' or 'id' — which TRANSFAC column to use for TF names.
     output_dir
         If given, save intermediate results here.
     prefix
@@ -848,26 +870,38 @@ def run_phase3(
         threshold=corr_threshold,
     )
 
-    # 3c: Motif matching (requires genome FASTA + JASPAR motifs)
-    if genome_fasta is not None and jaspar_motifs_path is not None:
+    # 3c: Motif matching
+    # Only scan peaks that survived correlation filtering (matching R's
+    # reduce(peak_gene_overlap_GR2) which only scans correlated peaks).
+    if genome_fasta is not None and pwm_dict is not None and motif_db is not None:
+        correlated_peak_names = sorted(correlated_pairs["peak"].unique())
+        logger.info(
+            f"  Motif scanning restricted to {len(correlated_peak_names)} "
+            f"correlated peaks (of {len(peak_names)} total)"
+        )
         motif_matches = match_motifs_to_peaks(
-            peak_names,
+            correlated_peak_names,
             genome_fasta,
-            jaspar_motifs_path,
+            pwm_dict,
+            motif_db,
+            hvg_names,
             pvalue_cutoff=motif_pvalue,
+            gene_name_type=gene_name_type,
         )
     else:
         logger.warning(
-            "  Skipping motif matching (genome FASTA or JASPAR motifs not provided). "
+            "  Skipping motif matching (genome FASTA or TRANSFAC files not provided). "
             "Triplet assembly will be incomplete."
         )
-        motif_matches = pd.DataFrame(columns=["TF", "peak", "motif_id", "score"])
+        motif_matches = pd.DataFrame(columns=["motif_id", "peak"])
 
     # 3d: Triplet assembly
     triplets, gene_labels = assemble_triplets(
         correlated_pairs,
         motif_matches,
+        motif_db if motif_db is not None else pd.DataFrame(columns=["Accession", "TFs", "EnsemblID"]),
         hvg_names,
+        gene_name_type=gene_name_type,
     )
 
     # 3e: Prepare RF inputs
@@ -909,3 +943,132 @@ def run_phase3(
         logger.info(f"  Saved Phase 3 outputs to {output_dir}")
 
     return results
+
+
+# =========================================================================
+#  Main
+# =========================================================================
+
+
+if __name__ == "__main__":
+    import sys
+
+    logging.basicConfig(level=logging.INFO, format="%(message)s")
+
+    data_dir = Path("data/processed")
+    ref_dir = Path("data/reference")
+    paper_ref = Path("data/paper/reference")
+    seaad_dir = data_dir / "seaad"
+
+    # Load TRANSFAC PWMs (shared across datasets)
+    pwm_rds = paper_ref / "all_motif_pwm.rds"
+    if not pwm_rds.exists():
+        logger.error(f"TRANSFAC PWM file not found: {pwm_rds}")
+        sys.exit(1)
+
+    logger.info("Loading TRANSFAC motif data...")
+    # We load PWMs once; motif_db is species-specific (loaded per dataset).
+
+    # --- PBMC (paired, human hg38) ---
+    pbmc_rna_path = data_dir / "pbmc_rna_sub.h5ad"
+    pbmc_atac_path = data_dir / "pbmc_atac_sub.h5ad"
+
+    if pbmc_rna_path.exists() and pbmc_atac_path.exists():
+        logger.info("\n" + "=" * 60)
+        logger.info("PBMC Phase 3")
+        logger.info("=" * 60)
+
+        pwm_dict, motif_db_hs = load_transfac_motifs(
+            pwm_rds, paper_ref / "Tranfac201803_Hs_MotifTFsFinal",
+        )
+        gene_ann = load_gene_annotations(paper_ref / "gencode.v38.annotation.gtf")
+        pbmc_rna = ad.read_h5ad(pbmc_rna_path)
+        pbmc_atac = ad.read_h5ad(pbmc_atac_path)
+
+        run_phase3(
+            pbmc_rna, pbmc_atac, gene_ann,
+            genome_fasta=ref_dir / "hg38.fa",
+            pwm_dict=pwm_dict, motif_db=motif_db_hs,
+            output_dir=data_dir, prefix="pbmc",
+        )
+        del pbmc_rna, pbmc_atac
+
+    # --- Retinal (unpaired, mouse mm10) ---
+    ret_rna_path = data_dir / "retinal_rna_sub.h5ad"
+    ret_atac_path = data_dir / "retinal_atac_sub.h5ad"
+
+    if ret_rna_path.exists() and ret_atac_path.exists():
+        logger.info("\n" + "=" * 60)
+        logger.info("Retinal Phase 3")
+        logger.info("=" * 60)
+
+        pwm_dict_mm, motif_db_mm = load_transfac_motifs(
+            pwm_rds, paper_ref / "Tranfac201803_Mm_MotifTFsFinal.txt",
+        )
+        gene_ann_mm = load_gene_annotations(paper_ref / "mouse.genes.gtf")
+        ret_rna = ad.read_h5ad(ret_rna_path)
+        ret_atac = ad.read_h5ad(ret_atac_path)
+
+        run_phase3(
+            ret_rna, ret_atac, gene_ann_mm,
+            genome_fasta=ref_dir / "mm10.fa",
+            pwm_dict=pwm_dict_mm, motif_db=motif_db_mm,
+            output_dir=data_dir, prefix="retinal",
+        )
+        del ret_rna, ret_atac
+
+    # --- SEA-AD Paired (human hg38) ---
+    seaad_p_rna_path = seaad_dir / "seaad_paired_rna_sub.h5ad"
+    seaad_p_atac_path = seaad_dir / "seaad_paired_atac_sub.h5ad"
+
+    if seaad_p_rna_path.exists() and seaad_p_atac_path.exists():
+        logger.info("\n" + "=" * 60)
+        logger.info("SEA-AD Paired Phase 3")
+        logger.info("=" * 60)
+
+        if "pwm_dict" not in dir() or "motif_db_hs" not in dir():
+            pwm_dict, motif_db_hs = load_transfac_motifs(
+                pwm_rds, paper_ref / "Tranfac201803_Hs_MotifTFsFinal",
+            )
+        if "gene_ann" not in dir():
+            gene_ann = load_gene_annotations(paper_ref / "gencode.v38.annotation.gtf")
+
+        seaad_p_rna = ad.read_h5ad(seaad_p_rna_path)
+        seaad_p_atac = ad.read_h5ad(seaad_p_atac_path)
+
+        run_phase3(
+            seaad_p_rna, seaad_p_atac, gene_ann,
+            genome_fasta=ref_dir / "hg38.fa",
+            pwm_dict=pwm_dict, motif_db=motif_db_hs,
+            output_dir=seaad_dir, prefix="seaad_paired",
+        )
+        del seaad_p_rna, seaad_p_atac
+
+    # --- SEA-AD Unpaired (human hg38) ---
+    seaad_u_rna_path = seaad_dir / "seaad_unpaired_rna_sub.h5ad"
+    seaad_u_atac_path = seaad_dir / "seaad_unpaired_atac_sub.h5ad"
+
+    if seaad_u_rna_path.exists() and seaad_u_atac_path.exists():
+        logger.info("\n" + "=" * 60)
+        logger.info("SEA-AD Unpaired Phase 3")
+        logger.info("=" * 60)
+
+        if "pwm_dict" not in dir() or "motif_db_hs" not in dir():
+            pwm_dict, motif_db_hs = load_transfac_motifs(
+                pwm_rds, paper_ref / "Tranfac201803_Hs_MotifTFsFinal",
+            )
+        if "gene_ann" not in dir():
+            gene_ann = load_gene_annotations(paper_ref / "gencode.v38.annotation.gtf")
+
+        seaad_u_rna = ad.read_h5ad(seaad_u_rna_path)
+        seaad_u_atac = ad.read_h5ad(seaad_u_atac_path)
+
+        run_phase3(
+            seaad_u_rna, seaad_u_atac, gene_ann,
+            genome_fasta=ref_dir / "hg38.fa",
+            pwm_dict=pwm_dict, motif_db=motif_db_hs,
+            output_dir=seaad_dir, prefix="seaad_unpaired",
+        )
+        del seaad_u_rna, seaad_u_atac
+
+    logger.info("\nDone.")
