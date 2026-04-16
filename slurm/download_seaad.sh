@@ -22,11 +22,15 @@ set -euo pipefail
 
 OUTDIR="${1:-data/seaad}"
 BUCKET="s3://sea-ad-single-cell-profiling"
+CONTAINER="container_0-1-3.sif"
+
+AWS="apptainer exec --writable-tmpfs --pwd /opt/app --containall \
+  --bind data/:/opt/app/data/ \
+  ${CONTAINER} pixi run --manifest-path /opt/app/pixi.toml aws"
 
 mkdir -p "$OUTDIR"
-cd "$OUTDIR"
 
-echo "Downloading SEA-AD MTG data to $(pwd)"
+echo "Downloading SEA-AD MTG data to $(pwd)/${OUTDIR}"
 echo "Started: $(date)"
 
 # ===========================================================================
@@ -35,11 +39,11 @@ echo "Started: $(date)"
 
 echo ""
 echo "=== Listing MTG/RNAseq/ ==="
-pixi run aws s3 ls --no-sign-request "${BUCKET}/MTG/RNAseq/" | head -20
+${AWS} s3 ls --no-sign-request "${BUCKET}/MTG/RNAseq/" | head -20
 
 echo ""
 echo "=== Listing MTG/ATACseq/ ==="
-pixi run aws s3 ls --no-sign-request "${BUCKET}/MTG/ATACseq/" | head -20
+${AWS} s3 ls --no-sign-request "${BUCKET}/MTG/ATACseq/" | head -20
 
 # ===========================================================================
 #  Download RNA h5ad (~20 GB)
@@ -49,10 +53,10 @@ echo ""
 echo "=== Downloading RNA h5ad ==="
 
 RNA_FILE="SEAAD_MTG_RNAseq_final-nuclei.2024-02-13.h5ad"
-if [ ! -f "$RNA_FILE" ]; then
-    pixi run aws s3 cp --no-sign-request \
+if [ ! -f "${OUTDIR}/${RNA_FILE}" ]; then
+    ${AWS} s3 cp --no-sign-request \
         "${BUCKET}/MTG/RNAseq/${RNA_FILE}" \
-        "$RNA_FILE"
+        "${OUTDIR}/${RNA_FILE}"
 else
     echo "RNA file already exists, skipping"
 fi
@@ -67,10 +71,10 @@ echo "=== Downloading ATAC h5ad ==="
 
 # Try the most likely filename; adjust based on bucket listing output
 ATAC_FILE="SEAAD_MTG_ATACseq_final-nuclei.2024-02-13.h5ad"
-if [ ! -f "$ATAC_FILE" ]; then
-    pixi run aws s3 cp --no-sign-request \
+if [ ! -f "${OUTDIR}/${ATAC_FILE}" ]; then
+    ${AWS} s3 cp --no-sign-request \
         "${BUCKET}/MTG/ATACseq/${ATAC_FILE}" \
-        "$ATAC_FILE" \
+        "${OUTDIR}/${ATAC_FILE}" \
     || {
         echo "Exact ATAC filename not found. Check bucket listing above."
         echo "You may need to update ATAC_FILE in this script."
@@ -83,4 +87,4 @@ fi
 echo ""
 echo "Done: $(date)"
 echo "Files:"
-ls -lh
+ls -lh "${OUTDIR}"
