@@ -106,6 +106,11 @@ def inspect_seaad(
                     for val, count in vc.tail(5).items():
                         logger.info(f"      {val}: {count:,}")
 
+        # Donor x method cross-tab (critical for understanding overlap)
+        if "method" in adata.obs.columns and "Donor ID" in adata.obs.columns:
+            crosstab = pd.crosstab(adata.obs["Donor ID"], adata.obs["method"])
+            logger.info(f"\n  Donor x method cross-tab:\n{crosstab.to_string()}")
+
         adata.file.close()
 
     return info
