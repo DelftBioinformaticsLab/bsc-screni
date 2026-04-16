@@ -70,7 +70,7 @@ echo ""
 echo "=== Downloading ATAC h5ad ==="
 
 # Try the most likely filename; adjust based on bucket listing output
-ATAC_FILE="SEAAD_MTG_ATACseq_final-nuclei.2024-02-13.h5ad"
+ATAC_FILE="SEAAD_MTG_ATACseq_final-nuclei.2024-12-06.h5ad"
 if [ ! -f "${OUTDIR}/${ATAC_FILE}" ]; then
     ${AWS} s3 cp --no-sign-request \
         "${BUCKET}/MTG/ATACseq/${ATAC_FILE}" \
