@@ -28,7 +28,7 @@ logger = logging.getLogger(__name__)
 # Cell types to keep for ScReNI analysis.
 # AD-relevant subclasses with adequate multiome cell counts in SEA-AD.
 # These are values in the Subclass column (exact name confirmed by inspection).
-SEAAD_CELL_TYPES = ["Micro-PVM", "Astro", "Oligo", "L2/3 IT"]
+SEAAD_CELL_TYPES = ["Microglia-PVM", "Astrocyte", "Oligodendrocyte", "L2/3 IT"]
 
 # Minimum cells per modality per donor for per-donor unpaired alignment
 MIN_CELLS_PER_DONOR = 50
@@ -171,11 +171,13 @@ def audit_multiome_pairing(
 
     candidate_key_cols = [
         ["sample_id"],
-        ["library_id"],
-        ["specimen_name"],
-        ["donor_id"],
-        ["donor_id", "sample_id"],
-        ["external_donor_name_label"],
+        ["bc"],
+        ["sample_name"],
+        ["library_prep"],
+        ["Donor ID"],
+        ["Donor ID", "bc"],
+        ["sample_name", "bc"],
+        ["library_prep", "bc"],
     ]
 
     for key_cols in candidate_key_cols:
@@ -231,7 +233,7 @@ def audit_multiome_pairing(
 def classify_donors(
     rna: ad.AnnData,
     atac: ad.AnnData,
-    donor_col: str = "donor_id",
+    donor_col: str = "Donor ID",
     min_cells: int = MIN_CELLS_PER_DONOR,
 ) -> pd.DataFrame:
     """Classify donors by available modalities and cell counts.
@@ -483,11 +485,11 @@ def split_by_modality(
 
     # Log overlapping donors
     if "paired_rna" in result:
-        paired_donors = set(result["paired_rna"].obs["donor_id"].unique()
+        paired_donors = set(result["paired_rna"].obs["Donor ID"].unique()
                            if "donor_id" in result["paired_rna"].obs.columns else [])
-        unpaired_rna_donors = set(result["unpaired_rna"].obs["donor_id"].unique()
+        unpaired_rna_donors = set(result["unpaired_rna"].obs["Donor ID"].unique()
                                   if "donor_id" in result["unpaired_rna"].obs.columns else [])
-        unpaired_atac_donors = set(result["unpaired_atac"].obs["donor_id"].unique()
+        unpaired_atac_donors = set(result["unpaired_atac"].obs["Donor ID"].unique()
                                    if "donor_id" in result["unpaired_atac"].obs.columns else [])
         overlap = paired_donors & (unpaired_rna_donors | unpaired_atac_donors)
         if overlap:
@@ -506,7 +508,7 @@ def split_by_modality(
 
 def qc_summary(
     adata_dict: dict[str, ad.AnnData],
-    donor_col: str = "donor_id",
+    donor_col: str = "Donor ID",
 ) -> None:
     """Print QC summary for all splits."""
     logger.info("\n=== QC Summary ===")
@@ -525,7 +527,8 @@ def qc_summary(
             logger.info(f"  Donors: {n_donors}")
 
         # ADNC distribution (if available)
-        for adnc_col in ["ADNC", "Continuous Pseudo-progression Score"]:
+        for adnc_col in ["Overall AD neuropathological Change",
+                        "Continuous Pseudo-progression Score", "ADNC"]:
             if adnc_col in adata.obs.columns:
                 vals = adata.obs[adnc_col].dropna()
                 if len(vals) > 0:
@@ -582,15 +585,11 @@ if __name__ == "__main__":
     # ----------------------------------------------------------------
     # Phase 0b: Pairing audit
     # ----------------------------------------------------------------
-    # These column names and values must be confirmed from the inspection
-    # output above. Update them after the first run.
-    #
-    # TODO: After first inspection run, replace these placeholders with
-    # the actual column names found in the data.
-    MODALITY_COL = "Method"          # PLACEHOLDER — update after inspection
-    MULTIOME_VALUE = "10x multiome"  # PLACEHOLDER — update after inspection
-    DONOR_COL = "donor_id"           # PLACEHOLDER — update after inspection
-    CELL_TYPE_COL = "Subclass"       # PLACEHOLDER — update after inspection
+    # Column names confirmed from inspection output.
+    MODALITY_COL = "method"
+    MULTIOME_VALUE = "10xMulti"
+    DONOR_COL = "Donor ID"
+    CELL_TYPE_COL = "Subclass"
 
     logger.info("\n" + "=" * 60)
     logger.info("Phase 0b: Multiome Pairing Audit")

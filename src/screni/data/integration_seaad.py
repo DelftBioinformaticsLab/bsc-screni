@@ -75,7 +75,7 @@ def integrate_seaad_paired(
     logger.info("=== SEA-AD Paired Integration (WNN) ===")
     logger.info(
         f"  {paired_rna.n_obs} cells, "
-        f"{paired_rna.obs['donor_id'].nunique()} donors"
+        f"{paired_rna.obs['Donor ID'].nunique()} donors"
     )
 
     mdata = integrate_paired(
@@ -83,7 +83,7 @@ def integrate_seaad_paired(
         n_hvgs=n_hvgs,
         n_pcs=n_pcs,
         n_neighbors=n_neighbors,
-        batch_key="donor_id",
+        batch_key="Donor ID",
     )
 
     return mdata
@@ -296,7 +296,7 @@ def integrate_seaad_unpaired(
     unpaired_atac: ad.AnnData,
     gene_annotations: pd.DataFrame,
     donor_info: pd.DataFrame,
-    donor_col: str = "donor_id",
+    donor_col: str = "Donor ID",
     n_hvgs: int = 2000,
     n_neighbors: int = 20,
 ) -> tuple[ad.AnnData | None, pd.DataFrame]:
