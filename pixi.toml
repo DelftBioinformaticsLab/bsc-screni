@@ -12,10 +12,11 @@ linux = "3.10"  # Lower for older kernel on DAIC
 
 [tasks]
 setup-dev = "pip install -e ."
-process = { cmd = "python -m screni.data.loading", env = { PYTHONPATH = "src" } }
+process-pbmc = { cmd = "python -m screni.data.loading", env = { PYTHONPATH = "src" } }
+load-paper = { cmd = "python -m screni.data.loading_paper", env = { PYTHONPATH = "src" } }
 integrate-pbmc = { cmd = "python -m screni.data.integration", env = { PYTHONPATH = "src" } }
-integrate-retinal = { cmd = "python -m screni.data.integration_retinal", env = { PYTHONPATH = "src" } }
 feature-select = { cmd = "python -m screni.data.feature_selection", env = { PYTHONPATH = "src" } }
+feature-select-r-ref = { cmd = "python -m screni.data.feature_selection --r-reference", env = { PYTHONPATH = "src" } }
 load-seaad = { cmd = "python -m screni.data.loading_seaad", env = { PYTHONPATH = "src" } }
 integrate-seaad = { cmd = "python -m screni.data.integration_seaad", env = { PYTHONPATH = "src" } }
 gene-peak = { cmd = "python -m screni.data.gene_peak_relations", env = { PYTHONPATH = "src" } }

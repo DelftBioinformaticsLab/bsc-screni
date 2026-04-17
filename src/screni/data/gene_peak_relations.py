@@ -201,6 +201,18 @@ def filter_by_correlation(
     gene_to_idx = {g: i for i, g in enumerate(rna_adata.var_names)}
     peak_to_idx = {p: i for i, p in enumerate(atac_adata.var_names)}
 
+    # Detect binary ATAC data.  When peaks are strictly 0/1, the
+    # "both-nonzero" filter makes the peak column constant (all 1s),
+    # so Spearman is undefined.  Use all cells instead — zeros in
+    # binary accessibility are informative, not technical dropout.
+    if sp.issparse(atac_adata.X):
+        atac_vals = atac_adata.X.data
+    else:
+        atac_vals = atac_adata.X[atac_adata.X > 0]
+    atac_is_binary = np.all(atac_vals == 1.0)
+    if atac_is_binary:
+        logger.info("  ATAC data is binary -- using all cells for correlation")
+
     results = []
     n_skipped_missing = 0
     n_skipped_sparse = 0
@@ -226,15 +238,21 @@ def filter_by_correlation(
         else:
             peak_acc = atac_adata.X[:, pi].flatten()
 
-        # Use only cells where both are non-zero
-        both_nonzero = (gene_expr > 0) & (peak_acc > 0)
-        n_valid = both_nonzero.sum()
-
-        if n_valid < min_nonzero_cells:
-            n_skipped_sparse += 1
-            continue
-
-        corr, _ = spearmanr(gene_expr[both_nonzero], peak_acc[both_nonzero])
+        if atac_is_binary:
+            # Binary ATAC: correlate across all cells (point-biserial)
+            if peak_acc.sum() < min_nonzero_cells or gene_expr.sum() == 0:
+                n_skipped_sparse += 1
+                continue
+            corr, _ = spearmanr(gene_expr, peak_acc)
+        else:
+            # Count ATAC: use only cells where both are non-zero
+            # (matches R's gene_peak_corr1 which avoids dropout zeros)
+            both_nonzero = (gene_expr > 0) & (peak_acc > 0)
+            n_valid = both_nonzero.sum()
+            if n_valid < min_nonzero_cells:
+                n_skipped_sparse += 1
+                continue
+            corr, _ = spearmanr(gene_expr[both_nonzero], peak_acc[both_nonzero])
 
         if np.isnan(corr):
             continue
@@ -242,7 +260,10 @@ def filter_by_correlation(
         if abs(corr) > threshold:
             results.append({"gene": gene, "peak": peak, "spearman_r": corr})
 
-    result_df = pd.DataFrame(results)
+    if results:
+        result_df = pd.DataFrame(results)
+    else:
+        result_df = pd.DataFrame(columns=["gene", "peak", "spearman_r"])
     logger.info(
         f"  Kept {len(result_df)} correlated pairs "
         f"(skipped {n_skipped_missing} missing, {n_skipped_sparse} too sparse)\n"

@@ -42,10 +42,12 @@ The lockfile (`pixi.lock`) pins exact versions, so builds are reproducible.
 Some processing steps can run locally via pixi tasks:
 
 ```bash
-pixi run process           # Phase 0: data loading
-pixi run integrate-pbmc    # Phase 1: PBMC integration
-pixi run integrate-retinal # Phase 1: retinal integration
+pixi run load-paper        # Phase 0: load paper's retinal data
+pixi run process-pbmc      # Phase 0: PBMC loading + annotation
+pixi run integrate-pbmc    # Phase 1: PBMC WNN integration
+pixi run feature-select    # Phase 2: feature selection
+pixi run gene-peak         # Phase 3: gene-peak-TF relations
 ```
 
 Note: CellTypist annotation crashes on Windows due to a numpy int32 overflow
-with large sparse matrices. Use the cluster for Phase 0 (`run_processing.sh`).
+with large sparse matrices. Use the cluster for PBMC Phase 0.

@@ -235,6 +235,26 @@ def subsample_pairs(
     return rna_sub, atac_sub
 
 
+def _select_by_name(adata: ad.AnnData, names: list[str], label: str) -> ad.AnnData:
+    """Subset an AnnData to a pre-defined list of feature names."""
+    available = [n for n in names if n in adata.var_names]
+    if len(available) < len(names):
+        logger.warning(
+            f"  {label}: {len(names) - len(available)} features not found "
+            f"in data ({len(available)}/{len(names)} available)"
+        )
+    result = adata[:, available].copy()
+    if sp.issparse(result.X):
+        max_val = result.X.max()
+    else:
+        max_val = result.X.max()
+    logger.info(
+        f"  Selected {result.n_vars} {label} from reference list "
+        f"(max value: {max_val:.1f})"
+    )
+    return result
+
+
 def prepare_subsample(
     rna: ad.AnnData,
     atac: ad.AnnData,
@@ -243,8 +263,21 @@ def prepare_subsample(
     n_peaks: int = 10000,
     seed: int = 42,
     pairs: pd.DataFrame | None = None,
+    hvg_list: list[str] | None = None,
+    hvp_list: list[str] | None = None,
 ) -> dict[str, ad.AnnData]:
     """Full Phase 2 pipeline: subsample cells and select features.
+
+    Feature selection supports two modes:
+
+    **Python mode** (default): select HVGs/HVPs using scanpy's seurat_v3
+    VST.  This produces ~99.4% overlap with Seurat's R implementation
+    (validated on the retinal benchmark).
+
+    **R-reference mode**: pass pre-computed feature lists via ``hvg_list``
+    and/or ``hvp_list`` (e.g. exported from Seurat's ``FindVariableFeatures``).
+    This gives an exact match with the R pipeline.  Use
+    ``scripts/run_paper_phase3.R`` to export these lists.
 
     Parameters
     ----------
@@ -255,21 +288,28 @@ def prepare_subsample(
     n_per_type
         Cells per cell type to sample.
     n_genes
-        Number of HVGs to select.
+        Number of HVGs to select (Python mode only).
     n_peaks
-        Number of HV peaks to select.
+        Number of HV peaks to select (Python mode only).
     seed
         Random seed.
     pairs
         For unpaired datasets: DataFrame with ``rna_cell``, ``atac_cell``,
         ``cell_type`` columns (from Phase 1 NN pairing).  When provided,
         subsampling operates on matched pairs instead of independent cells.
+    hvg_list
+        Pre-computed HVG names (R-reference mode).  If provided, skips
+        Python VST and subsets RNA to these genes directly.
+    hvp_list
+        Pre-computed HVP names (R-reference mode).  If provided, skips
+        Python VST and subsets ATAC to these peaks directly.
 
     Returns
     -------
     Dict with keys 'rna' and 'atac', each a subsampled + feature-selected AnnData.
     """
-    logger.info("=== Phase 2: Cell Subsampling & Feature Selection ===")
+    mode = "R-reference" if (hvg_list is not None or hvp_list is not None) else "Python"
+    logger.info(f"=== Phase 2: Cell Subsampling & Feature Selection ({mode} mode) ===")
 
     if pairs is not None:
         # Unpaired data: subsample matched pairs
@@ -289,14 +329,22 @@ def prepare_subsample(
     atac_sub = filter_chr_peaks(atac_sub)
 
     # Feature selection
-    logger.info(f"Selecting {n_genes} HVGs from RNA...")
-    rna_sub = select_variable_features(rna_sub, n_features=n_genes)
+    if hvg_list is not None:
+        logger.info(f"Using R-reference HVGs ({len(hvg_list)} genes)...")
+        rna_sub = _select_by_name(rna_sub, hvg_list, "HVGs")
+    else:
+        logger.info(f"Selecting {n_genes} HVGs from RNA (Python VST)...")
+        rna_sub = select_variable_features(rna_sub, n_features=n_genes)
 
-    logger.info(f"Selecting {n_peaks} HV peaks from ATAC...")
-    # ATAC data is often binary/near-binary, making the mean-variance
-    # relationship near-degenerate.  A wider LOESS span avoids numerical
-    # singularity in skmisc that R's loess() handles gracefully.
-    atac_sub = select_variable_features(atac_sub, n_features=n_peaks, span=0.5)
+    if hvp_list is not None:
+        logger.info(f"Using R-reference HVPs ({len(hvp_list)} peaks)...")
+        atac_sub = _select_by_name(atac_sub, hvp_list, "HVPs")
+    else:
+        logger.info(f"Selecting {n_peaks} HV peaks from ATAC (Python VST)...")
+        # ATAC data is often binary/near-binary, making the mean-variance
+        # relationship near-degenerate.  A wider LOESS span avoids numerical
+        # singularity in skmisc that R's loess() handles gracefully.
+        atac_sub = select_variable_features(atac_sub, n_features=n_peaks, span=0.5)
 
     # Final summary
     logger.info(
@@ -308,8 +356,16 @@ def prepare_subsample(
     return {"rna": rna_sub, "atac": atac_sub}
 
 
+def _load_feature_list(path: Path) -> list[str] | None:
+    """Load a feature list from a text file (one name per line), or None."""
+    if path.exists():
+        return path.read_text().strip().split("\n")
+    return None
+
+
 if __name__ == "__main__":
     import logging
+    import sys
     from pathlib import Path
 
     import muon as mu
@@ -318,8 +374,30 @@ if __name__ == "__main__":
 
     data_dir = Path("data/processed")
     out_dir = Path("data/processed")
+    paper_dir = Path("data/paper/datasets")
 
-    # --- PBMC (paired) ---
+    # Feature selection mode:
+    #   --r-reference : use R-exported HVGs/HVPs for exact reproduction
+    #   (default)     : use Python VST (~99.4% overlap with R)
+    use_r_ref = "--r-reference" in sys.argv
+
+    # Load R-reference feature lists if available and requested
+    r_hvgs = _load_feature_list(paper_dir / "r_hvg_500.txt") if use_r_ref else None
+    r_hvps = _load_feature_list(paper_dir / "r_hvp_10000.txt") if use_r_ref else None
+    if use_r_ref:
+        if r_hvgs and r_hvps:
+            logger.info(
+                f"R-reference mode: {len(r_hvgs)} HVGs, {len(r_hvps)} HVPs "
+                f"from {paper_dir}"
+            )
+        else:
+            logger.warning(
+                "R-reference mode requested but feature lists not found. "
+                "Run scripts/run_paper_phase3.R first. Falling back to Python."
+            )
+            r_hvgs = r_hvps = None
+
+    # --- PBMC (paired, always Python mode — no R reference available) ---
     logger.info("\n" + "=" * 60)
     logger.info("PBMC (paired)")
     logger.info("=" * 60)
@@ -328,7 +406,6 @@ if __name__ == "__main__":
     rna_mod = mdata.mod["rna"]
     atac_mod = mdata.mod["atac"]
 
-    # Extract raw counts (integration leaves normalized values in .X)
     pbmc_rna = ad.AnnData(
         X=rna_mod.layers["counts"].copy(),
         obs=rna_mod.obs[["cell_type"]].copy(),
@@ -352,7 +429,7 @@ if __name__ == "__main__":
 
     del pbmc, pbmc_rna, pbmc_atac
 
-    # --- Retinal (unpaired) ---
+    # --- Retinal (unpaired, supports R-reference mode) ---
     logger.info("\n" + "=" * 60)
     logger.info("Retinal (unpaired)")
     logger.info("=" * 60)
@@ -365,6 +442,8 @@ if __name__ == "__main__":
         rna=rna_full, atac=atac_full,
         n_per_type=100, n_genes=500, n_peaks=10000, seed=42,
         pairs=pairs,
+        hvg_list=r_hvgs,
+        hvp_list=r_hvps,
     )
 
     retinal["rna"].write_h5ad(out_dir / "retinal_rna_sub.h5ad")
