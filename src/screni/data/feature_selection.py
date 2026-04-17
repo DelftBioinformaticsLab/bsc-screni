@@ -1,4 +1,4 @@
-"""Phase 2: Cell subsampling and feature selection.
+"""Phase 2: Cell subsampling, feature selection, and KNN computation.
 
 Matches the original R ``select_features()`` and
 ``Select_partial_cells_for_scNewtorks()`` functions.
@@ -11,6 +11,7 @@ Key parameters from the paper:
     - 10,000 HV peaks for ATAC
     - Feature selection uses Seurat v3 VST
     - Returns RAW COUNTS (not normalized) for selected features
+    - KNN (k=20) computed on integrated embedding for wScReNI
 """
 
 import logging
@@ -21,6 +22,7 @@ import numpy as np
 import pandas as pd
 import scanpy as sc
 import scipy.sparse as sp
+from sklearn.neighbors import NearestNeighbors
 
 logger = logging.getLogger(__name__)
 
@@ -222,6 +224,9 @@ def subsample_pairs(
     rna_sub.obs["cell_type"] = pairs_sub["cell_type"].values
     atac_sub.obs["cell_type"] = pairs_sub["cell_type"].values
 
+    # Keep original cell names for KNN embedding lookup
+    rna_sub.obs["_original_rna_cell"] = pairs_sub["rna_cell"].values
+
     # Align obs_names so downstream code can match cells across modalities
     shared_names = [f"cell_{i}" for i in range(len(pairs_sub))]
     rna_sub.obs_names = shared_names
@@ -233,6 +238,33 @@ def subsample_pairs(
     )
     logger.info(f"  Cell type counts: {rna_sub.obs['cell_type'].value_counts().to_dict()}")
     return rna_sub, atac_sub
+
+
+def compute_knn(
+    embedding: np.ndarray,
+    k: int = 20,
+) -> np.ndarray:
+    """Compute k-nearest-neighbor indices from an embedding matrix.
+
+    Used by wScReNI to define cell neighborhoods for cell-specific
+    network inference.
+
+    Parameters
+    ----------
+    embedding
+        (n_cells, n_dims) embedding matrix (e.g. Harmony, WNN).
+    k
+        Number of neighbors (default 20, matching ScReNI's KNN parameter).
+
+    Returns
+    -------
+    (n_cells, k) integer array of neighbor indices.
+    """
+    nn = NearestNeighbors(n_neighbors=k, metric="euclidean")
+    nn.fit(embedding)
+    indices = nn.kneighbors(return_distance=False)
+    logger.info(f"  KNN: {indices.shape} (k={k}) from {embedding.shape[1]}d embedding")
+    return indices
 
 
 def _select_by_name(adata: ad.AnnData, names: list[str], label: str) -> ad.AnnData:
@@ -265,8 +297,11 @@ def prepare_subsample(
     pairs: pd.DataFrame | None = None,
     hvg_list: list[str] | None = None,
     hvp_list: list[str] | None = None,
-) -> dict[str, ad.AnnData]:
-    """Full Phase 2 pipeline: subsample cells and select features.
+    embedding: np.ndarray | None = None,
+    embedding_cell_names: list[str] | np.ndarray | None = None,
+    knn_k: int = 20,
+) -> dict[str, ad.AnnData | np.ndarray]:
+    """Full Phase 2 pipeline: subsample cells, select features, compute KNN.
 
     Feature selection supports two modes:
 
@@ -303,10 +338,21 @@ def prepare_subsample(
     hvp_list
         Pre-computed HVP names (R-reference mode).  If provided, skips
         Python VST and subsets ATAC to these peaks directly.
+    embedding
+        (n_cells, n_dims) embedding matrix for KNN computation (e.g.
+        Harmony or WNN embedding).  Cell order must match
+        ``embedding_cell_names``.  If provided, KNN indices are computed
+        for the subsampled cells and included in the output.
+    embedding_cell_names
+        Cell names corresponding to rows of ``embedding``.  Used to look
+        up the subsampled cells in the full embedding.
+    knn_k
+        Number of neighbors for KNN (default 20).
 
     Returns
     -------
-    Dict with keys 'rna' and 'atac', each a subsampled + feature-selected AnnData.
+    Dict with keys 'rna', 'atac' (AnnData), and optionally 'knn_indices'
+    (n_subsampled, knn_k) integer array.
     """
     mode = "R-reference" if (hvg_list is not None or hvp_list is not None) else "Python"
     logger.info(f"=== Phase 2: Cell Subsampling & Feature Selection ({mode} mode) ===")
@@ -346,14 +392,41 @@ def prepare_subsample(
         # singularity in skmisc that R's loess() handles gracefully.
         atac_sub = select_variable_features(atac_sub, n_features=n_peaks, span=0.5)
 
+    # KNN computation from integrated embedding
+    result = {"rna": rna_sub, "atac": atac_sub}
+
+    if embedding is not None and embedding_cell_names is not None:
+        logger.info("Computing KNN from integrated embedding...")
+        cell_lookup = {str(name): i for i, name in enumerate(embedding_cell_names)}
+
+        # Find the subsampled cells in the full embedding
+        # rna_sub.obs has an '_original_cell' column if from subsample_pairs,
+        # otherwise obs_names are the original cell names
+        if "_original_rna_cell" in rna_sub.obs.columns:
+            lookup_names = rna_sub.obs["_original_rna_cell"].values
+        else:
+            lookup_names = rna_sub.obs_names
+
+        sub_indices = [cell_lookup[str(n)] for n in lookup_names if str(n) in cell_lookup]
+        sub_embedding = embedding[sub_indices]
+
+        if len(sub_embedding) == rna_sub.n_obs:
+            result["knn_indices"] = compute_knn(sub_embedding, k=knn_k)
+        else:
+            logger.warning(
+                f"  KNN: matched {len(sub_embedding)}/{rna_sub.n_obs} "
+                f"cells in embedding, skipping"
+            )
+
     # Final summary
     logger.info(
         f"Phase 2 complete:\n"
         f"  RNA:  {rna_sub.shape} (raw counts)\n"
         f"  ATAC: {atac_sub.shape} (raw counts)"
+        + (f"\n  KNN:  {result['knn_indices'].shape}" if "knn_indices" in result else "")
     )
 
-    return {"rna": rna_sub, "atac": atac_sub}
+    return result
 
 
 def _load_feature_list(path: Path) -> list[str] | None:
@@ -416,15 +489,30 @@ if __name__ == "__main__":
         obs=atac_mod.obs[["cell_type"]].copy(),
         var=atac_mod.var.copy(),
     )
+
+    # WNN embedding for KNN
+    pbmc_wnn_emb = None
+    pbmc_wnn_names = None
+    if "X_umap" in rna_mod.obsm:
+        # Use the WNN-derived UMAP or the PCA; prefer obsm key from integration
+        for key in ["X_wnn", "X_pca"]:
+            if key in rna_mod.obsm:
+                pbmc_wnn_emb = rna_mod.obsm[key]
+                pbmc_wnn_names = list(rna_mod.obs_names)
+                break
     del mdata
 
     pbmc = prepare_subsample(
         rna=pbmc_rna, atac=pbmc_atac,
         n_per_type=50, n_genes=500, n_peaks=10000, seed=42,
+        embedding=pbmc_wnn_emb,
+        embedding_cell_names=pbmc_wnn_names,
     )
 
     pbmc["rna"].write_h5ad(out_dir / "pbmc_rna_sub.h5ad")
     pbmc["atac"].write_h5ad(out_dir / "pbmc_atac_sub.h5ad")
+    if "knn_indices" in pbmc:
+        np.save(out_dir / "pbmc_knn_indices.npy", pbmc["knn_indices"])
     logger.info(f"Saved PBMC subsampled data to {out_dir}")
 
     del pbmc, pbmc_rna, pbmc_atac
@@ -438,16 +526,30 @@ if __name__ == "__main__":
     rna_full = ad.read_h5ad(data_dir / "retinal_rna.h5ad")
     atac_full = ad.read_h5ad(data_dir / "retinal_atac.h5ad")
 
+    # Load Harmony embedding from paper's exported Seurat object
+    harmony_path = paper_dir / "seurat_obj_harmony.csv"
+    ret_emb = None
+    ret_emb_names = None
+    if harmony_path.exists():
+        harmony_df = pd.read_csv(harmony_path, index_col=0)
+        ret_emb = harmony_df.values
+        ret_emb_names = list(harmony_df.index)
+        logger.info(f"Loaded Harmony embedding: {ret_emb.shape}")
+
     retinal = prepare_subsample(
         rna=rna_full, atac=atac_full,
         n_per_type=100, n_genes=500, n_peaks=10000, seed=42,
         pairs=pairs,
         hvg_list=r_hvgs,
         hvp_list=r_hvps,
+        embedding=ret_emb,
+        embedding_cell_names=ret_emb_names,
     )
 
     retinal["rna"].write_h5ad(out_dir / "retinal_rna_sub.h5ad")
     retinal["atac"].write_h5ad(out_dir / "retinal_atac_sub.h5ad")
+    if "knn_indices" in retinal:
+        np.save(out_dir / "retinal_knn_indices.npy", retinal["knn_indices"])
     logger.info(f"Saved retinal subsampled data to {out_dir}")
 
     del retinal, rna_full, atac_full

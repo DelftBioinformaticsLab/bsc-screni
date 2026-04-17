@@ -236,6 +236,55 @@ The 6% difference in correlated pairs comes entirely from 3 different HVGs and
 vs Python's `skmisc.loess`). All downstream code (correlation, motif matching,
 triplet assembly) is equivalent.
 
+## Output: inputs for network inference (Fig. 2, step 3+)
+
+The preprocessing pipeline (Phases 0-3) produces everything needed for
+cell-specific network inference. After running the pipeline, these files
+are in `data/processed/`:
+
+| File | Shape | Contents |
+|---|---|---|
+| `*_rna_sub.h5ad` | (400, 500) | Subsampled RNA, 500 HVGs, raw counts |
+| `*_atac_sub.h5ad` | (400, 10000) | Subsampled ATAC, 10k peaks, raw counts |
+| `*_knn_indices.npy` | (400, 20) | KNN neighbor indices from integrated embedding |
+| `*_triplets.csv` | ~10k rows | (TF, peak, target_gene) regulatory triplets |
+| `*_gene_labels.csv` | 500 rows | Each gene labeled as TF or target |
+| `*_peak_gene_pairs.csv` | ~200 rows | Correlated gene-peak pairs with Spearman r |
+| `*_peak_overlap_matrix.npz` | (400, ~200) | Peak accessibility + noise, for RF input |
+| `*_peak_info.csv` | ~200 rows | Which peaks map to which genes |
+
+Where `*` is `retinal`, `pbmc`, or `seaad_paired`/`seaad_unpaired`.
+
+**To load in Python:**
+
+```python
+import anndata as ad
+import pandas as pd
+import numpy as np
+
+# Subsampled expression + accessibility
+rna = ad.read_h5ad("data/processed/retinal_rna_sub.h5ad")   # (400, 500)
+atac = ad.read_h5ad("data/processed/retinal_atac_sub.h5ad")  # (400, 10000)
+
+# KNN neighbor indices (from Harmony embedding, k=20)
+knn = np.load("data/processed/retinal_knn_indices.npy")      # (400, 20)
+
+# Regulatory triplets: which TFs regulate which genes via which peaks
+triplets = pd.read_csv("data/processed/retinal_triplets.csv")
+# Columns: TF, peak, target_gene, spearman_r
+
+# Gene labels: TF or target
+labels = pd.read_csv("data/processed/retinal_gene_labels.csv")
+
+# Peak matrix for RF input (accessibility + Gaussian noise)
+peak_data = np.load("data/processed/retinal_peak_overlap_matrix.npz")
+peak_matrix = peak_data["peak_matrix"]  # (400 cells, ~200 peaks)
+```
+
+The triplets table and gene labels are the key inputs to the network
+inference step (wScReNI, kScReNI, etc. in Figure 2 of the paper). Each
+student's sub-question builds on these files.
+
 ## Running on the cluster
 
 ```bash
