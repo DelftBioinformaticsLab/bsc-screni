@@ -158,8 +158,9 @@ def align_donor_unpaired(
     rna_donor: ad.AnnData,
     atac_donor: ad.AnnData,
     gene_annotations: pd.DataFrame,
-    hvg_names: list[str],
+    hvg_names: list[str] | None,
     donor_id: str,
+    n_hvgs: int = 2000,
     n_harmony_dims: int = 20,
     harmony_lambda: float = 1.0,
     n_neighbors: int = 20,
@@ -168,13 +169,14 @@ def align_donor_unpaired(
 
     Steps:
       1. Gene activity from ATAC peaks
-      2. Shared genes = intersection of hvg_names and gene activity
-      3. Log-normalize both
-      4. Concatenate with modality flag
-      5. PCA (50 comps)
-      6. Harmony(modality)
-      7. kNN + UMAP
-      8. Pair RNA <-> ATAC (nearest cross-modal neighbor)
+      2. HVGs (per-donor if hvg_names is None)
+      3. Shared genes = intersection of HVGs and gene activity
+      4. Log-normalize both
+      5. Concatenate with modality flag
+      6. PCA
+      7. Harmony(modality)
+      8. kNN + UMAP
+      9. Pair RNA <-> ATAC (nearest cross-modal neighbor)
 
     Parameters
     ----------
@@ -185,9 +187,11 @@ def align_donor_unpaired(
     gene_annotations
         Gene body coordinates from hg38 GTF.
     hvg_names
-        Pre-computed global HVGs.
+        Pre-computed HVGs. If None, computed on this donor's RNA.
     donor_id
         Donor identifier (for logging and output).
+    n_hvgs
+        Number of HVGs if computing per-donor.
     n_harmony_dims
         PCA dimensions for Harmony.
     harmony_lambda
@@ -224,7 +228,22 @@ def align_donor_unpaired(
     # Step 1: Gene activity
     gene_activity = compute_gene_activity(atac_donor, gene_annotations)
 
-    # Step 2: Shared genes
+    # Step 2: HVGs (per-donor if not provided)
+    if hvg_names is None:
+        work = rna_donor.copy()
+        work.layers["counts"] = work.X.copy()
+        sc.pp.normalize_total(work, target_sum=1e4)
+        sc.pp.log1p(work)
+        sc.pp.filter_genes(work, min_cells=3)
+        sc.pp.highly_variable_genes(
+            work, n_top_genes=min(n_hvgs, work.n_vars),
+            flavor="seurat_v3", layer="counts", span=0.3,
+        )
+        hvg_names = work.var_names[work.var["highly_variable"]].tolist()
+        del work
+        logger.info(f"    Per-donor HVGs: {len(hvg_names)}")
+
+    # Step 3: Shared genes
     shared_genes = sorted(
         set(hvg_names) & set(gene_activity.var_names) & set(rna_donor.var_names)
     )
@@ -351,10 +370,9 @@ def integrate_seaad_unpaired(
     """
     logger.info("=== SEA-AD Unpaired Integration (per-donor Harmony) ===")
 
-    # Step 1: Global HVGs
-    hvg_names = compute_global_hvgs(unpaired_rna, n_hvgs=n_hvgs)
-
-    # Step 2: Loop over usable donors
+    # Step 1: Loop over usable donors
+    # HVGs are computed per-donor inside align_donor_unpaired to avoid
+    # loading the full 1.2M-cell RNA matrix for a global HVG call.
     usable_donors = donor_info[donor_info["has_both"]].index.tolist()
     logger.info(f"  Usable donors: {len(usable_donors)}")
 
@@ -374,8 +392,9 @@ def integrate_seaad_unpaired(
             merged_d, pairs_d = align_donor_unpaired(
                 rna_d, atac_d,
                 gene_annotations=gene_annotations,
-                hvg_names=hvg_names,
+                hvg_names=None,  # compute per-donor
                 donor_id=donor_id,
+                n_hvgs=n_hvgs,
                 n_neighbors=n_neighbors,
             )
             all_merged.append(merged_d)
@@ -451,6 +470,7 @@ if __name__ == "__main__":
         logger.info(f"Saved seaad_paired_integrated.h5mu")
 
         del mdata, paired_rna, paired_atac
+        import gc; gc.collect()
     else:
         logger.info("No paired data found — skipping WNN branch")
 
