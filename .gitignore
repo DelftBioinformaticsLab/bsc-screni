@@ -9,5 +9,6 @@
 
 # Container stuff
 *.sif
+*.egg-info
 
 __pycache__/

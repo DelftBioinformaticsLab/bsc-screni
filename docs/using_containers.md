@@ -17,6 +17,9 @@ For SLURM jobs, see the scripts in `slurm/` for examples.
 
 ### Building a new container
 
+To build a container, you need to install apptainer on your local machine.
+Either natively in Linux, or in WSL on Windows (https://apptainer.org/docs/admin/main/installation.html#installation-on-windows-or-mac)
+
 Rebuild the container **locally** whenever `pixi.toml` or `pixi.lock` change:
 
 ```bash
