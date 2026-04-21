@@ -4,7 +4,7 @@ Python reimplementation of the [ScReNI](https://github.com/Xuxl2020/ScReNI)
 single-cell regulatory network inference pipeline (Xu et al. 2025, GPB),
 extended to the SEA-AD Alzheimer's dataset.
 
-## Setting Up Mamba on the HPC Cluster
+## Setting Up Pixi on the HPC Cluster
 
 ### 1. Log in to the cluster
 
@@ -13,86 +13,74 @@ ssh [netID]@login.daic.tudelft.nl
 login using netID password
 ```
 
-### 2. Download and install Miniforge
+### 2. Using pixi
+Pixi is a fast, modern, and reproducible package management tool for developers of all backgrounds. It replaces conda/mamba as an environment manager by having the entire environment and dependencies all saved within the project directory, making it more modular and reproducible.
 
-Navigate to your home directory and download the installer:
-
-```bash
-cd /home/nfs/<your-student-name>
-wget https://github.com/conda-forge/miniforge/releases/latest/download/Miniforge3-Linux-x86_64.sh
-```
-
-Run the installer:
+Pixi should already be available on the cluster.
+Verify the installation with:
 
 ```bash
-bash Miniforge3-Linux-x86_64.sh
+pixi --version
 ```
 
-When prompted for the install location, accept the default (`/home/nfs/<your-student-name>/miniforge3`) or type it in explicitly.
+Locally, you should follow the tutorial from the Pixi website: https://pixi.prefix.dev/latest/installation/
 
-When asked "Do you wish to update your shell profile to automatically initialize conda?", type **yes**. This adds the necessary lines to your `.bashrc`.
+### 3. Install the project environment
 
-After installation, either log out and back in, or run:
+Navigate to your copy of the repository and install all dependencies declared in `pixi.toml`:
 
 ```bash
-source ~/.bashrc
+cd /tudelft.net/staff-umbrella/ScReNI/YOUR_NETID/bsc-screni
+pixi install
 ```
 
-You can verify the installation with:
+This resolves and installs the exact locked environment in one step — no manual package management needed.
+
+### 4. Run pipeline commands
+
+All pipeline steps are exposed as named tasks:
 
 ```bash
-mamba --version
+pixi run load-paper
+pixi run feature-select
+pixi run gene-peak
+# etc.
+```
+These scripts have been run already and output has been stored in /tudelft.net/staff-umbrella/ScReNI/bsc-screni. Either make calls to those files (but don't make changes to them as they might be shared between users!) or run the pipeline your own, which is a good way to get familiar with the preprocessing.
+
+### 5. Running SLURM jobs with a container
+
+For cluster jobs, use a/Apptainer container instead of activating pixi directly. This avoids environment activation issues inside SLURM and gives fully reproducible runs.
+
+**Premade container:** A ready-to-use `.sif` image is available at:
+
+```
+/tudelft.net/staff-umbrella/ScReNI/bsc-screni/*.sif
 ```
 
-### 3. Create your environment
+**Building your own container:** If you need to customise the image (e.g. add a package), read docs/using_containers.md
 
-```bash
-mamba create -n screni python=3.11
-```
-
-Activate it:
-
-```bash
-mamba activate screni
-```
-
-### 4. Install packages
-
-Install any packages you need, for example:
-
-```bash
-mamba install numpy pandas matplotlib
-```
-
-### 5. Using your environment in SLURM jobs
-
-Before running your SLURM .sbatch job scripts, make sure you have activated your environment.
-
-```bash
-(screni) -bash-4.2$ ./your_code.sbatch
-```
-
-DAIC documentation can be found here https://daic.tudelft.nl/
-Below is an example script with example settings wherein python is called.
+**Example SLURM script using the container:**
 
 ```bash
 #! /bin/sh
-#SBATCH --partition=general 
+#SBATCH --partition=general
 #SBATCH --qos=medium
 #SBATCH --cpus-per-task=34
 #SBATCH --mem=24000
 #SBATCH --time=12:57:59
-#SBATCH --job-name=name
-#SBATCH --mail-user=netid
+#SBATCH --job-name=screni
+#SBATCH --mail-user=netid@student.tudelft.nl
 #SBATCH --mail-type=END,FAIL
-#SBATCH --output=slurm_%j.out # Set name of output log. %j is the Slurm jobId
-#SBATCH --error=slurm_%j.err # Set name of error log. %j is the Slurm jobId
+#SBATCH --output=slurm_%j.out
+#SBATCH --error=slurm_%j.err
 
-ml use /opt/insy/modulefiles;
+SIF=/tudelft.net/staff-umbrella/ScReNI/bsc-screni/screni.sif
 
-python main.py
-
+apptainer exec --bind /tudelft.net:/tudelft.net "$SIF" python main.py
 ```
+
+DAIC documentation can be found at https://daic.tudelft.nl/
 
 ### 6. Accessing the shared project folder
 
@@ -108,16 +96,17 @@ You can reference this path in your scripts to read input data or write results.
 
 | Command | Description |
 |---|---|
-| `mamba activate screni` | Activate the environment |
-| `mamba deactivate` | Deactivate the current environment |
-| `mamba list` | List installed packages |
-| `mamba install <package>` | Install a package |
-| `mamba env list` | List all your environments |
+| `pixi install` | Install / sync the locked environment |
+| `pixi run <task>` | Run a named pipeline task |
+| `pixi shell` | Activate an interactive shell in the environment |
+| `pixi add <package>` | Add a new dependency to `pixi.toml` |
+| `pixi list` | List installed packages |
 
 ### Troubleshooting
 
-- If `mamba` is not found after installation, run `source ~/.bashrc` or log out and back in.
-- If you run out of disk space in your home directory, you can clean the package cache with `mamba clean --all`.
+- If `pixi` is not found after installation, run `source ~/.bashrc` or log out and back in.
+- If you get a lock conflict, delete `.pixi/` and re-run `pixi install`.
+- If the premade `.sif` is missing or outdated, build your own with `apptainer build`.
 
 ---
 
