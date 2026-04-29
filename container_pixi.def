@@ -2,7 +2,7 @@
 
 # Header
 Bootstrap: docker
-From: ghcr.io/prefix-dev/pixi:0.34.0
+From: ghcr.io/prefix-dev/pixi:0.40.3
 
 # Files
 %files
