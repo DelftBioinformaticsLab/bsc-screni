@@ -3,7 +3,7 @@ authors = ["timoverlaan <t.verlaan@tudelft.nl>"]
 channels = ["conda-forge"]
 description = "Reproducible environment for processing the ROSMAP dataset"
 name = "rosmap-processing"
-platforms = ["win-64", "linux-64"]
+platforms = ["win-64", "linux-64", "osx-arm64"]
 version = "0.1.3"
 
 [system-requirements]
@@ -55,3 +55,7 @@ pyfaidx = ">=0.7.0"           # Pure Python, works on Windows too
 [target.linux-64.pypi-dependencies]
 pyfaidx = ">=0.7.0"           # Genome FASTA indexing (pure Python, pip only)
 MOODS-python = ">=1.9.4"      # Exact motif p-value matching (C extension, Linux only)
+
+[target.osx-arm64.pypi-dependencies]
+scikit-misc = ">=0.1.4"       # LOESS for seurat_v3 HVG (pip on osx-arm64)
+pyfaidx = ">=0.7.0"           # Genome FASTA indexing (pure Python)
