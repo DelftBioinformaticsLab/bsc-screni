@@ -22,6 +22,8 @@ integrate-seaad = { cmd = "python -m screni.data.integration_seaad", env = { PYT
 gene-peak = { cmd = "python -m screni.data.gene_peak_relations", env = { PYTHONPATH = "src" } }
 
 [dependencies]
+python = ">=3.10"
+pip = "*"
 ipykernel = "*"
 psutil = ">=5.9.8,<5.10.dev0"
 pandas = ">=2.2.3,<3"
