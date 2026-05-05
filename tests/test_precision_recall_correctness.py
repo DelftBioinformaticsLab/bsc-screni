@@ -212,6 +212,51 @@ def test_missing_csn_key_raises():
         calculate_scnetwork_precision_recall({"method": [M]}, ["a_b"], top_number=[2])
 
 
+def test_mismatched_cell_count_raises():
+    """Methods with different per-cell counts trigger an explicit error."""
+    genes = ["a", "b"]
+    M = pd.DataFrame([[0.0, 0.5], [0.3, 0.0]], index=genes, columns=genes)
+    sc = {"CSN": [M, M], "method": [M]}  # CSN has 2 cells, method has 1
+    with pytest.raises(ValueError, match="cells but CSN has"):
+        calculate_scnetwork_precision_recall(sc, ["a_b"], top_number=[2])
+
+
+def test_mismatched_cell_order_raises_for_dict_inputs():
+    """Dict-typed per-cell collections with different key orderings trigger an error."""
+    genes = ["a", "b"]
+    M = pd.DataFrame([[0.0, 0.5], [0.3, 0.0]], index=genes, columns=genes)
+    sc = {
+        "CSN":    {"cell_a": M, "cell_b": M},
+        "method": {"cell_b": M, "cell_a": M},  # same keys, different order
+    }
+    with pytest.raises(ValueError, match="different order"):
+        calculate_scnetwork_precision_recall(sc, ["a_b"], top_number=[2])
+
+
+def test_mismatched_cell_keys_raises_for_dict_inputs():
+    """Dict-typed per-cell collections with different keys trigger an error."""
+    genes = ["a", "b"]
+    M = pd.DataFrame([[0.0, 0.5], [0.3, 0.0]], index=genes, columns=genes)
+    sc = {
+        "CSN":    {"cell_a": M, "cell_b": M},
+        "method": {"cell_a": M, "cell_c": M},  # cell_b vs cell_c
+    }
+    with pytest.raises(ValueError, match="different order"):
+        calculate_scnetwork_precision_recall(sc, ["a_b"], top_number=[2])
+
+
+def test_aligned_dict_cells_pass():
+    """Dict-typed per-cell collections with identical key ordering work."""
+    genes = ["a", "b"]
+    M = pd.DataFrame([[0.0, 0.5], [0.3, 0.0]], index=genes, columns=genes)
+    sc = {
+        "CSN":    {"cell_a": M, "cell_b": M},
+        "method": {"cell_a": M, "cell_b": M},
+    }
+    res = calculate_scnetwork_precision_recall(sc, ["a_b"], top_number=[2])
+    assert len(res[2]) == 2  # 1 method × 2 cells (CSN excluded for k>0)
+
+
 # ----------------------------------------------------------------------
 # summary_se edge cases
 # ----------------------------------------------------------------------

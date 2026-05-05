@@ -54,7 +54,30 @@ def calculate_scnetwork_precision_recall(
         )
 
     network_types = list(scNetworks.keys())
-    cell_num = len(scNetworks[network_types[0]])
+
+    # Cells must align across methods: csn_nonzero is indexed positionally and
+    # later applied to other methods' cells via the same index. Mismatched
+    # ordering or counts would silently mislabel per-cell results.
+    csn_cell_keys = [c for c, _ in _enumerate(scNetworks["CSN"])]
+    cell_num = len(csn_cell_keys)
+    csn_is_mapping = isinstance(scNetworks["CSN"], Mapping)
+
+    for net_type in network_types:
+        other_keys = [c for c, _ in _enumerate(scNetworks[net_type])]
+        if len(other_keys) != cell_num:
+            raise ValueError(
+                f"method {net_type!r} has {len(other_keys)} cells but CSN has "
+                f"{cell_num}; all methods must contain the same cells"
+            )
+        if (
+            csn_is_mapping
+            and isinstance(scNetworks[net_type], Mapping)
+            and other_keys != csn_cell_keys
+        ):
+            raise ValueError(
+                f"method {net_type!r} enumerates cells in a different order "
+                f"than CSN; all methods must use the same cell ordering"
+            )
 
     csn_nonzero = np.array(
         [int(np.count_nonzero(np.asarray(net))) for net in _values(scNetworks["CSN"])],
