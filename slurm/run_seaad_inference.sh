@@ -40,6 +40,7 @@ set -euo pipefail
 EXTRA_ARGS="${@}"
 
 apptainer exec --writable-tmpfs --pwd /opt/app --containall \
+  --bind /tudelft.net:/tudelft.net \
   --bind src/:/opt/app/src/ \
   --bind scripts/:/opt/app/scripts/ \
   --bind data/:/opt/app/data/ \
