@@ -288,25 +288,25 @@ def main(argv: list[str] | None = None) -> int:
     )
 
     # ---- Step 2: pick eligible donors ----
+    # Route both branches through select_eligible_donors so the metadata
+    # schema is identical (donor_id, condition, n_cells, age, sex,
+    # LATE_present, LBD_present) regardless of how the donor list was chosen.
+    full_table = select_eligible_donors(
+        rna_ct,
+        cell_type=args.cell_type,
+        min_cells_per_donor=0 if args.donors else args.min_cells_per_donor,
+    )
     if args.donors:
         chosen = [d.strip() for d in args.donors.split(",") if d.strip()]
-        donor_table = (
-            rna_ct.obs.loc[rna_ct.obs["Donor ID"].isin(chosen)]
-            .groupby("Donor ID", observed=True)
-            .first()
-            .reset_index()
-            .rename(columns={"Donor ID": "donor_id"})
-        )[["donor_id", "condition"]]
-        donor_table["n_cells"] = (
-            rna_ct.obs.groupby("Donor ID", observed=True).size().reindex(chosen).values
-        )
-        logger.info(f"User-supplied donor list: {len(chosen)} donors")
+        donor_table = full_table[full_table["donor_id"].isin(chosen)].reset_index(drop=True)
+        missing = set(chosen) - set(donor_table["donor_id"])
+        if missing:
+            logger.warning(
+                f"User-supplied donors not found in {args.cell_type}: {sorted(missing)}"
+            )
+        logger.info(f"User-supplied donor list: {len(donor_table)} donors")
     else:
-        donor_table = select_eligible_donors(
-            rna_ct,
-            cell_type=args.cell_type,
-            min_cells_per_donor=args.min_cells_per_donor,
-        )
+        donor_table = full_table
 
     if donor_table.empty:
         logger.error("No donors meet the eligibility criteria; aborting.")
