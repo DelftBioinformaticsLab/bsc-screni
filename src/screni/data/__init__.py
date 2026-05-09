@@ -28,6 +28,22 @@ from screni.data.regulator_enrichment import (
     identify_enriched_scregulators,
     network_analysis,
 )
+from screni.data.differential import (
+    DonorPseudobulks,
+    EdgeTestResult,
+    benjamini_hochberg,
+    differential_edges,
+    load_run_dir,
+    ols_with_covariates,
+    pseudobulk_per_donor,
+    wilcoxon_unadjusted,
+)
+from screni.data.loading_seaad import (
+    add_condition_column,
+    add_copathology_columns,
+    select_eligible_donors,
+    subsample_cells_per_donor,
+)
 
 __all__ = [
     # inference
@@ -55,4 +71,18 @@ __all__ = [
     # regulator enrichment (Duco)
     "network_analysis",
     "identify_enriched_scregulators",
+    # differential analysis (Ivo, SQ1)
+    "DonorPseudobulks",
+    "EdgeTestResult",
+    "benjamini_hochberg",
+    "differential_edges",
+    "load_run_dir",
+    "ols_with_covariates",
+    "pseudobulk_per_donor",
+    "wilcoxon_unadjusted",
+    # SeaAD SQ1 helpers
+    "add_condition_column",
+    "add_copathology_columns",
+    "select_eligible_donors",
+    "subsample_cells_per_donor",
 ]

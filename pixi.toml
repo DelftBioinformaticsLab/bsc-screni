@@ -20,6 +20,7 @@ feature-select-r-ref = { cmd = "python -m screni.data.feature_selection --r-refe
 load-seaad = { cmd = "python -m screni.data.loading_seaad", env = { PYTHONPATH = "src" } }
 integrate-seaad = { cmd = "python -m screni.data.integration_seaad", env = { PYTHONPATH = "src" } }
 gene-peak = { cmd = "python -m screni.data.gene_peak_relations", env = { PYTHONPATH = "src" } }
+seaad-inference = { cmd = "python scripts/run_seaad_inference.py", env = { PYTHONPATH = "src" } }
 
 [dependencies]
 ipykernel = "*"
@@ -34,6 +35,7 @@ leidenalg = ">=0.10.2,<0.11"
 openpyxl = ">=3.1.5,<4"
 pyyaml = ">=6.0,<7"
 scikit-learn = ">=1.3.0"
+statsmodels = ">=0.14.0,<0.15"   # OLS for SQ1 differential.py
 
 [pypi-dependencies]
 synapseclient = ">=4.7.0"

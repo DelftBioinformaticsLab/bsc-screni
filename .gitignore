@@ -12,3 +12,7 @@
 *.egg-info
 
 __pycache__/
+
+# local-only progress log for supervisor meetings (not version-controlled)
+progress_log.md
+.coverage

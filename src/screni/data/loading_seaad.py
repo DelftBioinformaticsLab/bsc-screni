@@ -10,6 +10,8 @@ This module:
   2. Audits whether multiome barcode pairing is recoverable
   3. Classifies donors by available modalities
   4. Loads, filters to chosen cell types, splits by modality, saves
+  5. Propagates AD/control condition from ADNC + co-pathology covariates,
+     filters donors by eligibility for differential analysis (SQ1)
 
 The inspection step (1-2) must run BEFORE committing to any downstream
 pipeline design. The pairing audit determines whether the paired WNN
@@ -32,6 +34,30 @@ SEAAD_CELL_TYPES = ["Microglia-PVM", "Astrocyte", "Oligodendrocyte", "L2/3 IT"]
 
 # Minimum cells per modality per donor for per-donor unpaired alignment
 MIN_CELLS_PER_DONOR = 50
+
+# AD/control binning for SQ1.  Forced by the donor counts in SEA-AD paired
+# multiome (only 3 'Not AD' donors exist; only 2 have >=50 cells in both
+# target cell types — a 2-vs-9 Wilcoxon is statistically toothless).
+# We pool the lower two ADNC categories into 'control' and the upper two
+# into 'ad'.  See progress_log.md (2026-05-09) for the full derivation.
+ADNC_COL = "Overall AD neuropathological Change"
+ADNC_TO_CONDITION = {
+    "Not AD": "control",
+    "Low": "control",
+    "Intermediate": "ad",
+    "High": "ad",
+}
+
+# Co-pathology obs columns + the value indicating absence.  Anything other
+# than the absence value is collapsed to *_present = True.
+LATE_COL = "LATE"
+LATE_ABSENT = "Not Identified"
+LBD_COL = "Highest Lewy Body Disease"
+# LBD's "absent" label includes a parenthetical and varies by row.
+LBD_ABSENT_PREFIX = "Not Identified"
+
+# Cell-level inclusion criterion column (Allen Institute QC flag).
+USED_IN_ANALYSIS_COL = "Used in analysis"
 
 
 # =========================================================================
@@ -570,6 +596,251 @@ def qc_summary(
                              f"range=[{vals.min():.2f}, {vals.max():.2f}]"
                     )
                 break
+
+
+# =========================================================================
+#  4f. Differential analysis prep (SQ1)
+# =========================================================================
+
+
+def add_condition_column(
+    adata: ad.AnnData,
+    adnc_col: str = ADNC_COL,
+    inplace: bool = True,
+) -> ad.AnnData:
+    """Add a 'condition' obs column with values 'control' / 'ad' / NaN.
+
+    The mapping pools 'Not AD' + 'Low' as control and 'Intermediate' + 'High'
+    as ad — see progress_log.md (2026-05-09) for the donor-count rationale.
+    Cells whose ADNC value is missing or unrecognised get NaN, which lets
+    downstream filters drop them cleanly via ``.dropna()``.
+
+    Parameters
+    ----------
+    adata
+        AnnData with ``adnc_col`` in ``.obs``.
+    adnc_col
+        Name of the ADNC column.  Default matches SEA-AD's exact column name.
+    inplace
+        Modify ``adata`` in place (also returned).  Set False to copy first.
+
+    Returns
+    -------
+    The (possibly copied) AnnData with ``obs['condition']`` set as a
+    pandas Categorical with categories ``['control', 'ad']``.
+    """
+    if not inplace:
+        adata = adata.copy()
+    if adnc_col not in adata.obs.columns:
+        raise KeyError(
+            f"ADNC column {adnc_col!r} not found in obs. "
+            f"Available: {list(adata.obs.columns)[:20]}..."
+        )
+    raw = adata.obs[adnc_col].astype(str)
+    mapped = raw.map(ADNC_TO_CONDITION)
+    adata.obs["condition"] = pd.Categorical(
+        mapped, categories=["control", "ad"], ordered=False
+    )
+    n_ctrl = int((adata.obs["condition"] == "control").sum())
+    n_ad = int((adata.obs["condition"] == "ad").sum())
+    n_drop = int(mapped.isna().sum())
+    logger.info(
+        f"  condition: control={n_ctrl} ad={n_ad} unmapped={n_drop} "
+        f"(unmapped cells will be dropped by downstream filters)"
+    )
+    return adata
+
+
+def add_copathology_columns(
+    adata: ad.AnnData,
+    late_col: str = LATE_COL,
+    lbd_col: str = LBD_COL,
+    inplace: bool = True,
+) -> ad.AnnData:
+    """Add boolean 'LATE_present' and 'LBD_present' obs columns.
+
+    These are covariates for the per-edge differential regression
+    (``differential.py``).  Each is True iff the corresponding raw column
+    indicates *any* level of co-pathology beyond the 'Not Identified' label.
+
+    Missing values are treated as False (absent) — SEA-AD's missingness
+    pattern is rare and the conservative reading keeps donors in the cohort.
+    """
+    if not inplace:
+        adata = adata.copy()
+
+    if late_col in adata.obs.columns:
+        late_raw = adata.obs[late_col].astype(str)
+        adata.obs["LATE_present"] = ~late_raw.str.startswith(LATE_ABSENT, na=False)
+    else:
+        logger.warning(f"  {late_col!r} not in obs; setting LATE_present = False")
+        adata.obs["LATE_present"] = False
+
+    if lbd_col in adata.obs.columns:
+        lbd_raw = adata.obs[lbd_col].astype(str)
+        adata.obs["LBD_present"] = ~lbd_raw.str.startswith(
+            LBD_ABSENT_PREFIX, na=False
+        )
+    else:
+        logger.warning(f"  {lbd_col!r} not in obs; setting LBD_present = False")
+        adata.obs["LBD_present"] = False
+
+    n_late = int(adata.obs["LATE_present"].sum())
+    n_lbd = int(adata.obs["LBD_present"].sum())
+    logger.info(
+        f"  co-pathology: LATE_present={n_late} cells, LBD_present={n_lbd} cells"
+    )
+    return adata
+
+
+def select_eligible_donors(
+    adata: ad.AnnData,
+    cell_type: str,
+    min_cells_per_donor: int = MIN_CELLS_PER_DONOR,
+    cell_type_col: str = "cell_type",
+    donor_col: str = "Donor ID",
+    require_condition: bool = True,
+) -> pd.DataFrame:
+    """Identify donors with adequate cells of one cell type for SQ1.
+
+    For each donor, count cells matching ``cell_type`` and report the donor
+    if the count is >= ``min_cells_per_donor``.  This is the per-cell-type
+    eligibility filter that protects the per-edge regression from donors
+    whose pseudobulk would be estimated from a handful of cells.
+
+    Parameters
+    ----------
+    adata
+        AnnData with ``donor_col``, ``cell_type_col``, ``condition`` in obs.
+        Run :func:`add_condition_column` first.
+    cell_type
+        Single value of ``cell_type_col`` to count over (e.g. "Microglia-PVM").
+    min_cells_per_donor
+        Inclusive lower bound on cells per donor.
+    require_condition
+        If True, only donors mapped to control/ad are returned.  Set False
+        to include all donors regardless of ADNC binning.
+
+    Returns
+    -------
+    DataFrame with one row per eligible donor and columns:
+    ``donor_id``, ``condition``, ``n_cells``, ``age``, ``sex``,
+    ``LATE_present``, ``LBD_present``.  Sorted by donor_id.
+    """
+    if cell_type_col not in adata.obs.columns:
+        raise KeyError(f"{cell_type_col!r} not in obs")
+    if donor_col not in adata.obs.columns:
+        raise KeyError(f"{donor_col!r} not in obs")
+
+    obs = adata.obs
+    mask = obs[cell_type_col] == cell_type
+    if require_condition:
+        if "condition" not in obs.columns:
+            raise KeyError(
+                "obs has no 'condition' column. "
+                "Call add_condition_column(adata) first."
+            )
+        mask = mask & obs["condition"].notna()
+
+    sub = obs.loc[mask]
+    if len(sub) == 0:
+        logger.warning(
+            f"No cells matched cell_type={cell_type!r} (require_condition={require_condition})"
+        )
+        return pd.DataFrame(
+            columns=["donor_id", "condition", "n_cells", "age", "sex",
+                     "LATE_present", "LBD_present"]
+        )
+
+    counts = sub.groupby(donor_col, observed=True).size()
+    eligible = counts[counts >= min_cells_per_donor].index.tolist()
+
+    rows = []
+    for d in eligible:
+        d_cells = sub.loc[sub[donor_col] == d]
+        first = d_cells.iloc[0]
+        rows.append({
+            "donor_id": d,
+            "condition": str(first.get("condition", "")),
+            "n_cells": int(len(d_cells)),
+            "age": float(first["Age at Death"])
+                if "Age at Death" in d_cells.columns
+                and pd.notna(first["Age at Death"]) else np.nan,
+            "sex": str(first["Sex"]) if "Sex" in d_cells.columns else "",
+            "LATE_present": bool(first.get("LATE_present", False)),
+            "LBD_present": bool(first.get("LBD_present", False)),
+        })
+
+    df = pd.DataFrame(rows).sort_values("donor_id").reset_index(drop=True)
+    n_ctrl = int((df["condition"] == "control").sum())
+    n_ad = int((df["condition"] == "ad").sum())
+    logger.info(
+        f"  {cell_type}: {len(df)} eligible donors "
+        f"(>= {min_cells_per_donor} cells) — control={n_ctrl} ad={n_ad}"
+    )
+    return df
+
+
+def subsample_cells_per_donor(
+    adata: ad.AnnData,
+    n_per_donor: int,
+    donor_col: str = "Donor ID",
+    cell_type: str | None = None,
+    cell_type_col: str = "cell_type",
+    seed: int = 0,
+) -> ad.AnnData:
+    """Subsample up to ``n_per_donor`` cells per donor.
+
+    If a donor has fewer than ``n_per_donor`` cells, all of them are kept.
+    Used to cap the wScReNI input size per (donor x cell type) slice so
+    inference stays within the cluster job's wall-clock budget.
+
+    Parameters
+    ----------
+    adata
+        AnnData filtered to the donors of interest.
+    n_per_donor
+        Target cells per donor.  E.g. 50 for the standard SeaAD pilot.
+    donor_col
+        Donor identifier column.
+    cell_type
+        Optional pre-filter to one cell type before sampling.
+    cell_type_col
+        Cell type column name.
+    seed
+        Reproducible seed for the per-donor random draw.
+
+    Returns
+    -------
+    AnnData containing the subsampled cells, in donor-grouped order.
+    """
+    rng = np.random.default_rng(seed)
+
+    if cell_type is not None:
+        if cell_type_col not in adata.obs.columns:
+            raise KeyError(f"{cell_type_col!r} not in obs")
+        adata = adata[adata.obs[cell_type_col] == cell_type].copy()
+
+    if donor_col not in adata.obs.columns:
+        raise KeyError(f"{donor_col!r} not in obs")
+
+    chosen_idx: list[int] = []
+    for donor, grp in adata.obs.groupby(donor_col, observed=True):
+        positions = np.flatnonzero(adata.obs[donor_col].values == donor)
+        if len(positions) <= n_per_donor:
+            chosen_idx.extend(positions.tolist())
+        else:
+            picked = rng.choice(positions, size=n_per_donor, replace=False)
+            chosen_idx.extend(sorted(picked.tolist()))
+
+    chosen_idx = sorted(set(chosen_idx))
+    sub = adata[chosen_idx].copy()
+    logger.info(
+        f"  subsampled to {sub.n_obs} cells across "
+        f"{sub.obs[donor_col].nunique()} donors "
+        f"(target {n_per_donor}/donor, cell_type={cell_type})"
+    )
+    return sub
 
 
 # =========================================================================
