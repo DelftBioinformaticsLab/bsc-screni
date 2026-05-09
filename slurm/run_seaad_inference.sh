@@ -1,6 +1,9 @@
 #!/bin/bash
 #SBATCH --job-name=seaad-wscreni
-#SBATCH --account=Education-EEMCS-Courses-CSE3000
+# TODO: re-add --account=Education-EEMCS-Courses-CSE3000 once admin
+#       onboards iharsani to that SLURM account (currently rejected as
+#       "Invalid account or account/partition combination specified").
+#       See progress_log.md (2026-05-09) for details.
 #SBATCH --output=slurm/out/%j_seaad_wscreni.out
 #SBATCH --error=slurm/out/%j_seaad_wscreni.out
 #SBATCH --time=16:00:00
