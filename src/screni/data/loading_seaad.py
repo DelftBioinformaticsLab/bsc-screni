@@ -9,7 +9,12 @@ This module:
   1. Inspects the schema (backed mode, no .X loaded)
   2. Audits whether multiome barcode pairing is recoverable
   3. Classifies donors by available modalities
-  4. Loads, filters to chosen cell types, splits by modality, saves
+  4. Splits by modality and saves the four h5ad files
+
+The production path in __main__ does NOT filter by cell type — all SEA-AD
+subclasses are kept on disk so each downstream sub-question can choose its
+own subset. `load_seaad()` and `SEAAD_CELL_TYPES` remain available as an
+ad-hoc helper for tools that want the four AD-relevant subclasses.
 
 The inspection step (1-2) must run BEFORE committing to any downstream
 pipeline design. The pairing audit determines whether the paired WNN
@@ -25,9 +30,11 @@ import pandas as pd
 
 logger = logging.getLogger(__name__)
 
-# Cell types to keep for ScReNI analysis.
 # AD-relevant subclasses with adequate multiome cell counts in SEA-AD.
 # These are values in the Subclass column (exact name confirmed by inspection).
+# Used as the default selection in `load_seaad()` only — the production
+# Phase 0 pipeline (__main__) does NOT apply this filter; all subclasses
+# are kept on disk so each sub-question can choose its own subset.
 SEAAD_CELL_TYPES = ["Microglia-PVM", "Astrocyte", "Oligodendrocyte", "L2/3 IT"]
 
 # Minimum cells per modality per donor for per-donor unpaired alignment

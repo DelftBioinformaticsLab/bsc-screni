@@ -19,6 +19,8 @@ feature-select = { cmd = "python -m screni.data.feature_selection", env = { PYTH
 feature-select-r-ref = { cmd = "python -m screni.data.feature_selection --r-reference", env = { PYTHONPATH = "src" } }
 load-seaad = { cmd = "python -m screni.data.loading_seaad", env = { PYTHONPATH = "src" } }
 integrate-seaad = { cmd = "python -m screni.data.integration_seaad", env = { PYTHONPATH = "src" } }
+inspect-seaad-integration = { cmd = "python scripts/inspect_seaad_integration.py", env = { PYTHONPATH = "src" } }
+check-seaad-atac-counts = { cmd = "python scripts/check_seaad_atac_counts.py", env = { PYTHONPATH = "src" } }
 gene-peak = { cmd = "python -m screni.data.gene_peak_relations", env = { PYTHONPATH = "src" } }
 
 [dependencies]
