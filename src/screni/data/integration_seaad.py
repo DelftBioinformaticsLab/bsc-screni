@@ -4,23 +4,32 @@ Two branches:
 
 Paired (multiome, 28 donors):
     Uses WNN via ``integrate_paired()`` from ``integration.py`` with
-    ``batch_key="donor_id"`` for donor-aware HVG selection.
+    ``batch_key="Donor ID"`` for donor-aware HVG selection.
 
-Unpaired (singleome, per-donor alignment):
-    For each donor with both singleome RNA and singleome ATAC:
-      1. Compute gene activity from ATAC peaks
-      2. Align RNA and gene-activity via Harmony(modality)
-      3. Pair RNA <-> ATAC cells (nearest cross-modal neighbor)
-    No cross-donor batch correction — preserves AD-related variation.
-    The resulting kNN graph is block-diagonal (no cross-donor neighbors).
+Unpaired (singleome, global embedding + per-donor pairing):
+    The earlier per-donor-everything design starved Harmony of data:
+    per-donor PCA on ~10k cells × two modality batches left modalities
+    in disjoint regions. The current design instead computes one global
+    embedding for all 1.6M cells, then pairs per-donor in that embedding.
+
+      1. Filter to donors with both modalities ≥ MIN_CELLS_PER_DONOR
+      2. Gene activity from ATAC peaks (one global sparse matmul)
+      3. Global HVGs from RNA (Seurat v3 VST on a donor-stratified sample)
+      4. Per-modality log1p(normalize_total), subset to shared HVGs
+      5. Concatenate RNA + gene-activity → ~1.6M cells
+      6. Global PCA (sparse, no scaling)
+      7. Harmony with batch_key="modality" only — donor effects deliberately
+         preserved as biological variation
+      8. Per-donor cross-modal NN pairing in X_harmony — anchor on the
+         rarer modality, every pair shares donor_id on both sides.
 
 Design decisions:
-    - Per-donor alignment avoids conflating batch correction with the
-      biological signal (ADNC, genotype) we want to preserve.
-    - Overlapping donors (in both multiome and singleome) are kept in
-      both branches to enable comparison.
-    - Global HVGs are computed once across all singleome RNA donors,
-      then used in every per-donor alignment for consistency.
+    - Global PCA gives Harmony enough cells per cluster to actually
+      correct the modality batch (the per-donor variant could not).
+    - Donor is excluded from the batch key so AD-related donor variation
+      is preserved for downstream sub-questions.
+    - Pairing stays per-donor so pair-level covariates (Donor ID, ADNC,
+      genotype) are unambiguous.
 """
 
 import logging
@@ -156,142 +165,213 @@ def integrate_seaad_paired(
 # =========================================================================
 
 
-def align_donor_unpaired(
-    rna_donor: ad.AnnData,
-    atac_donor: ad.AnnData,
-    gene_annotations: pd.DataFrame,
-    hvg_names: list[str] | None,
+def _pair_cross_modal(
+    rna_coords: np.ndarray,
+    atac_coords: np.ndarray,
+    rna_names: np.ndarray,
+    atac_names: np.ndarray,
+    rna_celltypes: np.ndarray,
+    atac_celltypes: np.ndarray,
     donor_id: str,
+) -> pd.DataFrame:
+    """Anchor cross-modal pairing on the rarer modality, no dedup.
+
+    Returns a DataFrame with columns rna_cell, atac_cell, cell_type,
+    atac_cell_type, distance, donor_id, anchor. Length = min(n_rna, n_atac).
+    """
+    n_rna = len(rna_coords)
+    n_atac = len(atac_coords)
+
+    if n_rna <= n_atac:
+        anchor = "rna"
+        dists = cdist(rna_coords, atac_coords, metric="euclidean")
+        nearest = dists.argmin(axis=1)
+        pair_dist = dists[np.arange(n_rna), nearest]
+        return pd.DataFrame({
+            "rna_cell": rna_names,
+            "atac_cell": atac_names[nearest],
+            "cell_type": rna_celltypes,
+            "atac_cell_type": atac_celltypes[nearest],
+            "distance": pair_dist,
+            "donor_id": donor_id,
+            "anchor": anchor,
+        })
+    anchor = "atac"
+    dists = cdist(atac_coords, rna_coords, metric="euclidean")
+    nearest = dists.argmin(axis=1)
+    pair_dist = dists[np.arange(n_atac), nearest]
+    return pd.DataFrame({
+        "rna_cell": rna_names[nearest],
+        "atac_cell": atac_names,
+        "cell_type": rna_celltypes[nearest],
+        "atac_cell_type": atac_celltypes,
+        "distance": pair_dist,
+        "donor_id": donor_id,
+        "anchor": anchor,
+    })
+
+
+def _global_hvgs(
+    rna: ad.AnnData,
+    n_hvgs: int,
+    donor_col: str,
+    sample_cells: int = 200_000,
+    seed: int = 0,
+) -> list[str]:
+    """Select HVGs from RNA on a donor-stratified subsample.
+
+    Seurat v3 VST on the full 1.2M-cell matrix is feasible but slow and
+    memory-heavy. A 200k-cell stratified subsample gives stable HVGs (Seurat v3
+    is variance-based, not population-size-sensitive) at a fraction of cost.
+    """
+    if rna.n_obs <= sample_cells:
+        sample_idx = np.arange(rna.n_obs)
+    else:
+        rng = np.random.RandomState(seed)
+        per_donor = max(1, sample_cells // max(rna.obs[donor_col].nunique(), 1))
+        sample_idx = []
+        for _, group in rna.obs.groupby(donor_col, observed=True).groups.items():
+            arr = np.asarray(group)
+            k = min(per_donor, len(arr))
+            sample_idx.append(rng.choice(arr, size=k, replace=False))
+        sample_idx = np.concatenate(sample_idx)
+
+    logger.info(f"  HVG: sampling {len(sample_idx)} of {rna.n_obs} cells for VST...")
+    work = rna[sample_idx].to_memory() if rna.isbacked else rna[sample_idx].copy()
+    work.layers["counts"] = work.X.copy()
+    sc.pp.normalize_total(work, target_sum=1e4)
+    sc.pp.log1p(work)
+    sc.pp.highly_variable_genes(
+        work, n_top_genes=n_hvgs,
+        flavor="seurat_v3", layer="counts", span=0.3,
+    )
+    hvgs = work.var_names[work.var["highly_variable"]].tolist()
+    logger.info(f"  HVG: selected {len(hvgs)} genes")
+    return hvgs
+
+
+def integrate_seaad_unpaired_global(
+    unpaired_rna: ad.AnnData,
+    unpaired_atac: ad.AnnData,
+    gene_annotations: pd.DataFrame,
+    donor_info: pd.DataFrame,
+    donor_col: str = "Donor ID",
     n_hvgs: int = 2000,
+    n_pcs: int = 50,
     n_harmony_dims: int = 20,
     harmony_lambda: float = 1.0,
-    n_neighbors: int = 20,
-) -> tuple[ad.AnnData, pd.DataFrame]:
-    """Align RNA and ATAC for a single singleome donor.
+) -> tuple[ad.AnnData, pd.DataFrame, pd.DataFrame]:
+    """Integrate SEA-AD singleome via global embedding + per-donor pairing.
 
-    Steps:
-      1. Gene activity from ATAC peaks
-      2. HVGs (per-donor if hvg_names is None)
-      3. Shared genes = intersection of HVGs and gene activity
-      4. Log-normalize both
-      5. Concatenate with modality flag
-      6. PCA
-      7. Harmony(modality)
-      8. kNN + UMAP
-      9. Pair RNA <-> ATAC (nearest cross-modal neighbor)
+    Architecture (differs from the earlier per-donor design):
 
-    Parameters
-    ----------
-    rna_donor
-        RNA cells from one donor, raw counts.
-    atac_donor
-        ATAC cells from one donor, raw peak counts.
-    gene_annotations
-        Gene body coordinates from hg38 GTF.
-    hvg_names
-        Pre-computed HVGs. If None, computed on this donor's RNA.
-    donor_id
-        Donor identifier (for logging and output).
-    n_hvgs
-        Number of HVGs if computing per-donor.
-    n_harmony_dims
-        PCA dimensions for Harmony.
-    harmony_lambda
-        Harmony diversity penalty.
-    n_neighbors
-        k for kNN graph.
+      1. Filter to usable donors (have both modalities, each ≥ MIN_CELLS_PER_DONOR)
+      2. Gene activity from ATAC peaks (one global sparse matmul)
+      3. Global HVGs from RNA (Seurat v3 VST on a stratified subsample)
+      4. Subset both modalities to HVGs ∩ gene-activity vars
+      5. Per-modality log1p(normalize_total) — sparse, in place
+      6. Concatenate RNA + gene-activity → one combined AnnData (~1.6M cells)
+      7. Global PCA on the sparse combined matrix (truncated SVD, no scaling)
+      8. Harmony with batch_key="modality" only — donor effects are deliberately
+         preserved in the embedding as biological variation
+      9. Per-donor cross-modal NN pairing in X_harmony space — anchor on rare,
+         every pair has the same donor_id on both sides
+
+    The global PCA + global Harmony gives the modality correction enough data
+    to actually mix the two clouds; per-donor pairing keeps the pair-level
+    donor structure students need for AD-vs-control analyses.
 
     Returns
     -------
-    (merged, pairs) where merged is an AnnData with both modalities (obs
-    restricted to modality / cell_type / Donor ID) and pairs is a DataFrame
-    with columns rna_cell, atac_cell, cell_type, atac_cell_type, distance,
-    donor_id, anchor. Pair count equals min(n_rna, n_atac).
-
-    Raises
-    ------
-    ValueError
-        If too few cells or shared genes.
+    (combined, all_pairs, donor_summary)
     """
-    n_rna = rna_donor.n_obs
-    n_atac = atac_donor.n_obs
+    logger.info("=== SEA-AD Unpaired Integration (GLOBAL embedding) ===")
 
-    if n_rna < MIN_CELLS_PER_DONOR:
-        raise ValueError(f"Too few RNA cells ({n_rna} < {MIN_CELLS_PER_DONOR})")
-    if n_atac < MIN_CELLS_PER_DONOR:
-        raise ValueError(f"Too few ATAC cells ({n_atac} < {MIN_CELLS_PER_DONOR})")
+    # ----------------------------------------------------------------
+    # 1) Filter to usable donors
+    # ----------------------------------------------------------------
+    usable_donors = donor_info[donor_info["has_both"]].index.tolist()
+    logger.info(f"  Usable donors: {len(usable_donors)}")
+    rna_mask = unpaired_rna.obs[donor_col].isin(usable_donors)
+    atac_mask = unpaired_atac.obs[donor_col].isin(usable_donors)
+    rna = unpaired_rna[rna_mask.values].copy()
+    atac = unpaired_atac[atac_mask.values].copy()
+    logger.info(f"  After donor filter — RNA: {rna.shape}, ATAC: {atac.shape}")
 
-    # Log RNA:ATAC ratio warning
-    ratio = n_rna / max(n_atac, 1)
-    if ratio > 10 or ratio < 0.1:
-        logger.warning(
-            f"  Donor {donor_id}: RNA:ATAC ratio = {ratio:.1f} "
-            f"({n_rna}:{n_atac}), alignment may be biased"
-        )
+    # ----------------------------------------------------------------
+    # 2) Gene activity (global)
+    # ----------------------------------------------------------------
+    gene_activity = compute_gene_activity(atac, gene_annotations)
 
-    # Step 1: Gene activity
-    gene_activity = compute_gene_activity(atac_donor, gene_annotations)
+    # ----------------------------------------------------------------
+    # 3) Global HVGs (on stratified subsample)
+    # ----------------------------------------------------------------
+    hvgs = _global_hvgs(rna, n_hvgs=n_hvgs, donor_col=donor_col)
 
-    # Step 2: HVGs (per-donor if not provided)
-    if hvg_names is None:
-        work = rna_donor.copy()
-        work.layers["counts"] = work.X.copy()
-        sc.pp.normalize_total(work, target_sum=1e4)
-        sc.pp.log1p(work)
-        sc.pp.filter_genes(work, min_cells=3)
-        sc.pp.highly_variable_genes(
-            work, n_top_genes=min(n_hvgs, work.n_vars),
-            flavor="seurat_v3", layer="counts", span=0.3,
-        )
-        hvg_names = work.var_names[work.var["highly_variable"]].tolist()
-        del work
-        logger.info(f"    Per-donor HVGs: {len(hvg_names)}")
-
-    # Step 3: Shared genes
+    # ----------------------------------------------------------------
+    # 4) Shared gene set
+    # ----------------------------------------------------------------
     shared_genes = sorted(
-        set(hvg_names) & set(gene_activity.var_names) & set(rna_donor.var_names)
+        set(hvgs) & set(gene_activity.var_names) & set(rna.var_names)
     )
+    logger.info(f"  Shared genes: {len(shared_genes)} (HVG ∩ gene-activity)")
     if len(shared_genes) < 200:
-        raise ValueError(
-            f"Too few shared genes ({len(shared_genes)} < 200) "
-            f"between HVGs and gene activity"
-        )
+        raise ValueError(f"Too few shared genes ({len(shared_genes)} < 200)")
 
-    # Step 3: Log-normalize
-    rna_sub = rna_donor[:, shared_genes].copy()
+    rna_sub = rna[:, shared_genes].copy()
     ga_sub = gene_activity[:, shared_genes].copy()
+    del rna, gene_activity, atac
+    import gc; gc.collect()
 
+    # ----------------------------------------------------------------
+    # 5) Log-normalize per modality
+    # ----------------------------------------------------------------
+    logger.info("  Normalizing RNA and gene-activity ...")
     sc.pp.normalize_total(rna_sub, target_sum=1e4)
     sc.pp.log1p(rna_sub)
     sc.pp.normalize_total(ga_sub, target_sum=1e4)
     sc.pp.log1p(ga_sub)
 
-    # Step 4: Concatenate.
-    # Slim obs to a whitelist before concat: SEA-AD ships ~100 obs columns
-    # with mixed dtypes that (a) bloat memory and (b) break h5ad writes
-    # downstream. Keep only what's needed for downstream phases.
-    rna_sub.obs = rna_sub.obs[[c for c in _OBS_KEEP if c in rna_sub.obs.columns]].copy()
-    ga_sub.obs = ga_sub.obs[[c for c in _OBS_KEEP if c in ga_sub.obs.columns]].copy()
+    # ----------------------------------------------------------------
+    # 6) Slim obs, tag modality, preserve original obs_names, concat
+    # ----------------------------------------------------------------
+    rna_sub.obs = rna_sub.obs[
+        [c for c in _OBS_KEEP if c in rna_sub.obs.columns]
+    ].copy()
+    ga_sub.obs = ga_sub.obs[
+        [c for c in _OBS_KEEP if c in ga_sub.obs.columns]
+    ].copy()
     rna_sub.obs["modality"] = "RNA"
     ga_sub.obs["modality"] = "ATAC"
+    rna_sub.obs["_original_obs"] = rna_sub.obs_names.values
+    ga_sub.obs["_original_obs"] = ga_sub.obs_names.values
 
-    # Make obs_names unique before concat
+    # Give rows distinct obs_names so concat doesn't trip on duplicates.
     rna_sub.obs_names = [f"rna_{i}" for i in range(rna_sub.n_obs)]
     ga_sub.obs_names = [f"atac_{i}" for i in range(ga_sub.n_obs)]
 
-    # Preserve original obs_names for pairing output
-    rna_original_names = rna_donor.obs_names.tolist()
-    atac_original_names = atac_donor.obs_names.tolist()
-    rna_celltypes = rna_donor.obs["cell_type"].astype(str).values
-    atac_celltypes = atac_donor.obs["cell_type"].astype(str).values
-
+    logger.info(
+        f"  Concatenating RNA ({rna_sub.n_obs}) + gene-activity ({ga_sub.n_obs}) ..."
+    )
     combined = ad.concat([rna_sub, ga_sub], merge="same")
+    del rna_sub, ga_sub
+    gc.collect()
+    logger.info(f"  Combined: {combined.shape}")
 
-    # Step 5: PCA
-    sc.pp.scale(combined, max_value=10)
-    sc.tl.pca(combined, n_comps=min(50, len(shared_genes) - 1, combined.n_obs - 1))
+    # ----------------------------------------------------------------
+    # 7) Global PCA — sparse, no scaling (densifying 1.6M × 2k is ~12 GB)
+    # ----------------------------------------------------------------
+    logger.info(f"  Running PCA ({n_pcs} components, sparse) ...")
+    n_pcs = min(n_pcs, len(shared_genes) - 1, combined.n_obs - 1)
+    sc.pp.pca(combined, n_comps=n_pcs, zero_center=False)
 
-    # Step 6: Harmony
+    # ----------------------------------------------------------------
+    # 8) Harmony with modality as the only batch
+    # ----------------------------------------------------------------
+    logger.info(
+        f"  Running Harmony (batch=modality, dims={n_harmony_dims}, "
+        f"lamb={harmony_lambda}) ..."
+    )
     pca_dims = min(n_harmony_dims, combined.obsm["X_pca"].shape[1])
     ho = hm.run_harmony(
         combined.obsm["X_pca"][:, :pca_dims],
@@ -301,127 +381,36 @@ def align_donor_unpaired(
         lamb=harmony_lambda,
     )
     harmony_result = np.asarray(ho.Z_corr)
-    if harmony_result.shape[0] == combined.n_obs:
-        combined.obsm["X_harmony"] = harmony_result
-    else:
-        combined.obsm["X_harmony"] = harmony_result.T
+    if harmony_result.shape[0] != combined.n_obs:
+        harmony_result = harmony_result.T
+    combined.obsm["X_harmony"] = harmony_result
+    logger.info(f"  Harmony embedding: {harmony_result.shape}")
 
-    # Step 7: kNN + UMAP
-    sc.pp.neighbors(combined, use_rep="X_harmony", n_neighbors=n_neighbors)
-    sc.tl.umap(combined)
+    # ----------------------------------------------------------------
+    # 9) Per-donor pairing in X_harmony space
+    # ----------------------------------------------------------------
+    rna_mask = (combined.obs["modality"] == "RNA").values
+    atac_mask = (combined.obs["modality"] == "ATAC").values
+    donor_arr = combined.obs[donor_col].astype(str).values
+    ct_arr = combined.obs["cell_type"].astype(str).values
+    original_arr = combined.obs["_original_obs"].astype(str).values
+    embedding = combined.obsm["X_harmony"]
 
-    # Step 8: Pair RNA <-> ATAC in Harmony space.
-    # Anchor on the rarer modality: every anchor cell gets one cross-modal
-    # neighbor, no dedup, which guarantees pair_count = min(n_rna, n_atac).
-    # The old "RNA -> nearest ATAC then dedup-by-ATAC" scheme lost 90%+ of
-    # cells per donor in this dataset because RNA cells crowded onto a small
-    # subset of ATAC anchors.
-    rna_mask = combined.obs["modality"] == "RNA"
-    atac_mask = combined.obs["modality"] == "ATAC"
-    rna_harmony = combined.obsm["X_harmony"][rna_mask.values]
-    atac_harmony = combined.obsm["X_harmony"][atac_mask.values]
-
-    if n_rna <= n_atac:
-        # RNA is the rarer modality (or equal): RNA -> nearest ATAC
-        anchor = "rna"
-        dists = cdist(rna_harmony, atac_harmony, metric="euclidean")
-        nearest = dists.argmin(axis=1)
-        pair_distances = dists[np.arange(n_rna), nearest]
-        pairs = pd.DataFrame({
-            "rna_cell": rna_original_names,
-            "atac_cell": [atac_original_names[i] for i in nearest],
-            "cell_type": rna_celltypes,
-            "atac_cell_type": atac_celltypes[nearest],
-            "distance": pair_distances,
-            "donor_id": donor_id,
-            "anchor": anchor,
-        })
-    else:
-        # ATAC is rarer: ATAC -> nearest RNA
-        anchor = "atac"
-        dists = cdist(atac_harmony, rna_harmony, metric="euclidean")
-        nearest = dists.argmin(axis=1)
-        pair_distances = dists[np.arange(n_atac), nearest]
-        pairs = pd.DataFrame({
-            "rna_cell": [rna_original_names[i] for i in nearest],
-            "atac_cell": atac_original_names,
-            "cell_type": rna_celltypes[nearest],
-            "atac_cell_type": atac_celltypes,
-            "distance": pair_distances,
-            "donor_id": donor_id,
-            "anchor": anchor,
-        })
-
-    logger.info(
-        f"    Anchor: {anchor} (n_rna={n_rna}, n_atac={n_atac}) "
-        f"-> {len(pairs)} pairs, mean dist={pairs['distance'].mean():.3f}"
-    )
-
-    return combined, pairs
-
-
-def integrate_seaad_unpaired(
-    unpaired_rna: ad.AnnData,
-    unpaired_atac: ad.AnnData,
-    gene_annotations: pd.DataFrame,
-    donor_info: pd.DataFrame,
-    donor_col: str = "Donor ID",
-    n_hvgs: int = 2000,
-    n_neighbors: int = 20,
-) -> tuple[ad.AnnData | None, pd.DataFrame, pd.DataFrame]:
-    """Integrate all singleome donors via per-donor unpaired alignment.
-
-    Parameters
-    ----------
-    unpaired_rna, unpaired_atac
-        Singleome RNA and ATAC AnnDatas.
-    gene_annotations
-        Gene body coordinates from hg38 GTF.
-    donor_info
-        From classify_donors(): has 'has_both' column.
-    donor_col
-        Column containing donor identifiers.
-    n_hvgs
-        Number of global HVGs.
-    n_neighbors
-        k for kNN graph.
-
-    Returns
-    -------
-    (concatenated_merged, all_pairs, donor_summary) where
-    concatenated_merged is an AnnData with block-diagonal kNN graph (or
-    None if no donors aligned), all_pairs is a DataFrame of RNA-ATAC pairs
-    across all donors, and donor_summary is a per-donor diagnostics
-    DataFrame (n_rna, n_atac, n_pairs, anchor, mean_pair_distance,
-    cell_type_agreement, status, skip_reason).
-    """
-    logger.info("=== SEA-AD Unpaired Integration (per-donor Harmony) ===")
-
-    # Step 1: Loop over usable donors
-    # HVGs are computed per-donor inside align_donor_unpaired to avoid
-    # loading the full 1.2M-cell RNA matrix for a global HVG call.
-    usable_donors = donor_info[donor_info["has_both"]].index.tolist()
-    logger.info(f"  Usable donors: {len(usable_donors)}")
-
-    all_merged = []
-    all_pairs = []
+    all_pairs: list[pd.DataFrame] = []
     summary_rows: list[dict] = []
 
     for i, donor_id in enumerate(usable_donors):
-        logger.info(f"\n  [{i + 1}/{len(usable_donors)}] Donor: {donor_id}")
-
-        rna_d = unpaired_rna[unpaired_rna.obs[donor_col] == donor_id].copy()
-        atac_d = unpaired_atac[unpaired_atac.obs[donor_col] == donor_id].copy()
-        n_rna = rna_d.n_obs
-        n_atac = atac_d.n_obs
-
-        logger.info(f"    RNA: {n_rna}, ATAC: {n_atac}")
+        donor_mask = donor_arr == donor_id
+        d_rna = donor_mask & rna_mask
+        d_atac = donor_mask & atac_mask
+        n_rna_d = int(d_rna.sum())
+        n_atac_d = int(d_atac.sum())
 
         row = {
             "donor_id": donor_id,
-            "n_rna": n_rna,
-            "n_atac": n_atac,
-            "min_modality": min(n_rna, n_atac),
+            "n_rna": n_rna_d,
+            "n_atac": n_atac_d,
+            "min_modality": min(n_rna_d, n_atac_d),
             "n_pairs": 0,
             "pair_fraction": float("nan"),
             "anchor": "",
@@ -431,78 +420,79 @@ def integrate_seaad_unpaired(
             "skip_reason": "",
         }
 
-        try:
-            merged_d, pairs_d = align_donor_unpaired(
-                rna_d, atac_d,
-                gene_annotations=gene_annotations,
-                hvg_names=None,  # compute per-donor
-                donor_id=donor_id,
-                n_hvgs=n_hvgs,
-                n_neighbors=n_neighbors,
-            )
-            all_merged.append(merged_d)
-            all_pairs.append(pairs_d)
-
-            row["n_pairs"] = len(pairs_d)
-            row["pair_fraction"] = (
-                len(pairs_d) / row["min_modality"] if row["min_modality"] else float("nan")
-            )
-            row["anchor"] = pairs_d["anchor"].iloc[0] if len(pairs_d) else ""
-            row["mean_pair_distance"] = float(pairs_d["distance"].mean())
-            row["cell_type_agreement"] = float(
-                (pairs_d["cell_type"].astype(str)
-                 == pairs_d["atac_cell_type"].astype(str)).mean()
-            )
-        except ValueError as e:
+        if n_rna_d < MIN_CELLS_PER_DONOR or n_atac_d < MIN_CELLS_PER_DONOR:
             row["status"] = "skipped"
-            row["skip_reason"] = str(e)
-            logger.warning(f"    Skipped: {e}")
+            row["skip_reason"] = (
+                f"too few cells (RNA={n_rna_d}, ATAC={n_atac_d}, "
+                f"min={MIN_CELLS_PER_DONOR})"
+            )
+            logger.warning(f"  [{i + 1}/{len(usable_donors)}] {donor_id}: skipped — {row['skip_reason']}")
+            summary_rows.append(row)
+            continue
 
+        pairs_d = _pair_cross_modal(
+            embedding[d_rna], embedding[d_atac],
+            original_arr[d_rna], original_arr[d_atac],
+            ct_arr[d_rna], ct_arr[d_atac],
+            donor_id,
+        )
+        all_pairs.append(pairs_d)
+
+        row["n_pairs"] = len(pairs_d)
+        row["pair_fraction"] = len(pairs_d) / row["min_modality"]
+        row["anchor"] = pairs_d["anchor"].iloc[0]
+        row["mean_pair_distance"] = float(pairs_d["distance"].mean())
+        row["cell_type_agreement"] = float(
+            (pairs_d["cell_type"] == pairs_d["atac_cell_type"]).mean()
+        )
         summary_rows.append(row)
+        logger.info(
+            f"  [{i + 1}/{len(usable_donors)}] {donor_id}: "
+            f"n_rna={n_rna_d}, n_atac={n_atac_d}, anchor={row['anchor']}, "
+            f"pairs={row['n_pairs']}, agree={row['cell_type_agreement']:.3f}"
+        )
 
     summary_df = pd.DataFrame(summary_rows).set_index("donor_id")
-
-    logger.info(
-        f"\n  Aligned {(summary_df['status'] == 'aligned').sum()} / "
-        f"{len(usable_donors)} donors"
+    all_pairs_df = (
+        pd.concat(all_pairs, ignore_index=True) if all_pairs else pd.DataFrame()
     )
-    skipped = summary_df[summary_df["status"] == "skipped"]
-    if len(skipped):
-        logger.info(f"  Skipped {len(skipped)} donors:")
-        for d, r in skipped.iterrows():
-            logger.info(f"    {d}: {r['skip_reason']}")
 
-    if not all_merged:
-        logger.warning("  No donors aligned! Returning empty results.")
-        return None, pd.DataFrame(), summary_df
-
-    concatenated = ad.concat(all_merged, merge="same")
-    concatenated.obs_names_make_unique()
-
-    all_pairs_df = pd.concat(all_pairs, ignore_index=True)
-
+    # ----------------------------------------------------------------
     # Summary
-    logger.info(f"\n  Total cells: {concatenated.n_obs}")
-    logger.info(f"  Total pairs: {len(all_pairs_df)}")
+    # ----------------------------------------------------------------
     aligned = summary_df[summary_df["status"] == "aligned"]
+    logger.info(f"\n  Aligned {len(aligned)} / {len(summary_df)} donors")
     if len(aligned):
         logger.info(
-            f"  Pair fraction (of min_modality): "
-            f"mean={aligned['pair_fraction'].mean():.3f}, "
-            f"min={aligned['pair_fraction'].min():.3f}"
+            f"  Pair count: total={aligned['n_pairs'].sum():,}, "
+            f"median per donor={int(aligned['n_pairs'].median())}"
         )
         logger.info(
             f"  Cell type agreement: "
             f"mean={aligned['cell_type_agreement'].mean():.3f}, "
-            f"min={aligned['cell_type_agreement'].min():.3f}"
+            f"min={aligned['cell_type_agreement'].min():.3f}, "
+            f"max={aligned['cell_type_agreement'].max():.3f}"
         )
-    if "cell_type" in all_pairs_df.columns:
         logger.info(
-            f"  Pairs per cell type: "
+            f"  Mean pair distance: "
+            f"mean={aligned['mean_pair_distance'].mean():.3f}"
+        )
+    if len(all_pairs_df) and "cell_type" in all_pairs_df.columns:
+        logger.info(
+            f"  Pairs per cell type (RNA-side): "
             f"{all_pairs_df['cell_type'].value_counts().to_dict()}"
         )
 
-    return concatenated, all_pairs_df, summary_df
+    # Restore the meaningful obs_names so the merged AnnData is round-trippable.
+    combined.obs_names = pd.Index(combined.obs["_original_obs"].values)
+    combined.obs_names_make_unique()
+    combined.obs.drop(columns=["_original_obs"], inplace=True)
+
+    return combined, all_pairs_df, summary_df
+
+
+# Public name kept stable for __main__ and any imports.
+integrate_seaad_unpaired = integrate_seaad_unpaired_global
 
 
 # =========================================================================

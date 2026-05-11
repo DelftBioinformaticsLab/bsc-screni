@@ -168,6 +168,11 @@ def plot_unpaired() -> None:
         a.file.close()
         return
 
+    if "X_harmony" not in a.obsm:
+        print(f"  no X_harmony in obsm — skipping plot")
+        a.file.close()
+        return
+
     donor_counts = a.obs[donor_col].value_counts()
     top_donors = donor_counts.head(4).index.tolist()
     print(f"  top donors: {top_donors}")
@@ -176,14 +181,21 @@ def plot_unpaired() -> None:
     if len(top_donors) == 1:
         axes = axes[None, :]
 
-    # Plot all cells per donor (no subsampling — per-donor sizes are
-    # typically 1k–30k, which matplotlib handles fine with small markers).
-    # Modality colors are forced to a high-contrast palette; cell type uses
-    # the default tab20 across the top subclasses.
+    # Plot all cells per donor. The merged AnnData has a single global
+    # X_harmony from the global PCA+Harmony step but no X_umap (UMAP at
+    # 1.6M cells is too slow to compute in the integration job); compute
+    # a per-donor UMAP here from the harmonized coords so each panel is
+    # optimized for its own donor.
+    import scanpy as sc  # noqa: WPS433 — lazy import
     for i, donor in enumerate(top_donors):
         donor_idx = np.where((a.obs[donor_col] == donor).to_numpy())[0]
-        sub_obs = a.obs.iloc[donor_idx]
-        coords = np.asarray(a.obsm["X_umap"])[donor_idx]
+        print(f"  [{i + 1}/{len(top_donors)}] {donor}: {len(donor_idx)} cells; "
+              f"computing per-donor UMAP from X_harmony ...")
+        sub = a[donor_idx].to_memory()
+        sc.pp.neighbors(sub, use_rep="X_harmony", n_neighbors=15)
+        sc.tl.umap(sub)
+        coords = np.asarray(sub.obsm["X_umap"])
+        sub_obs = sub.obs
         # Scale marker size with cell count so dense donors stay readable.
         pt = max(0.3, 4.0 / np.sqrt(max(len(donor_idx), 1)))
 
