@@ -12,7 +12,7 @@ from typing import Iterable, Sequence
 import numpy as np
 import pandas as pd
 
-from .calculate_precision_recall import calculate_precision_recall
+from .precision_recall import calculate_precision_recall
 
 
 def calculate_scnetwork_precision_recall(

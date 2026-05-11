@@ -14,9 +14,6 @@ Translates four R functions from ScReNI:
     ``Infer_LIONESS_scNetworks()``  →  :func:`infer_lioness_networks`
       (``Infer_LIONESS_scNetworks.R``) — Duco
 
-    ``Infer_LIONESS_scNetworks()``  →  :func:`infer_lioness_networks`
-      (``Infer_LIONESS_scNetworks.R``) — Duco
-
 Pipeline position
 -----------------
 These functions sit at Step 4 of the ScReNI pipeline — they consume the
