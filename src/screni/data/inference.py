@@ -134,11 +134,17 @@ def _normalize_and_scale(raw_mat: np.ndarray) -> np.ndarray:
     lib_sizes[lib_sizes == 0] = 1.0  # guard against empty cells
     norm_mat = np.log1p(raw_mat / lib_sizes * 1e4)
 
-    # ScaleData: zero-centre and unit-variance per gene
+    # ScaleData: zero-centre and unit-variance per gene, then clip to [-10, 10].
+    # R's ScaleData() has clip.max=10 by default, which truncates scaled values
+    # exceeding 10 in absolute value.  On the retinal 500-gene dataset 161 of
+    # 200 000 scaled values exceed 10 (max ≈ 14.6), causing 193/400 cells to
+    # receive different kNN neighbours without clipping.
     gene_mean = norm_mat.mean(axis=0)
     gene_std = norm_mat.std(axis=0)
     gene_std[gene_std == 0] = 1.0  # guard against constant genes
     scaled_mat = (norm_mat - gene_mean) / gene_std
+    # R default clip.max=10 (ScaleData argument); equivalent to np.clip(…, -10, 10)
+    scaled_mat = np.clip(scaled_mat, -10.0, 10.0)
 
     return scaled_mat
 
@@ -275,8 +281,25 @@ def _genie3_single_target(
     X = expr_neighborhood_T[:, regulator_mask]  # (n_samples, n_genes-1)
     y = expr_neighborhood_T[:, target_idx]       # (n_samples,)
 
+    # ── R GENIE3 1.22.0 parameter equivalence ──────────────────────────────
+    # R: GENIE3::GENIE3(snn.expr, nCores=1, nTrees=100)
+    #    uses K="sqrt" (default) → mtry = round(sqrt(n_regulators))
+    #    GENIE3 internally checks whether 'nodesize' was passed by the caller.
+    #    kScReNI passes NO nodesize → GENIE3 takes the else-branch and explicitly
+    #    calls randomForest(..., nodesize=1)  — "grow fully developed trees".
+    #    See Infer_wScReNI_scNetworks.R lines 82-93 for the identical pattern
+    #    (that code is a direct copy of GENIE3's internal helper).
+    #
+    # sklearn equivalents:
+    #   max_features=mtry  (= round(sqrt(n_regulators))) matches R's K="sqrt"
+    #   min_samples_leaf=1                               matches R's nodesize=1
+    n_regulators = X.shape[1]  # n_genes - 1
+    mtry = round(np.sqrt(n_regulators))  # R: K="sqrt", round(sqrt(p))
+
     rf = RandomForestRegressor(
         n_estimators=n_trees,
+        max_features=mtry,        # R GENIE3: K="sqrt" → round(sqrt(n_regulators))
+        min_samples_leaf=1,       # R GENIE3: nodesize=1 ("grow fully developed trees")
         random_state=seed,
         n_jobs=1,
     )
@@ -437,7 +460,12 @@ def infer_kscreni_networks(
 
     for i, cell_name in enumerate(_cell_names):
         # Top k+1 cells by SNN similarity — R: order(mat[i,], decreasing=T)[1:(knn+1)]
-        neighbour_indices = np.argsort(-snn[i])[: k + 1]
+        # R's order() is stable: ties broken by ascending cell index.
+        # np.argsort default (quicksort) is unstable — must use kind='stable'.
+        # With only 22 possible Jaccard values (integer/integer fractions), 330/400
+        # cells have ties at the boundary, causing 303/400 cells to get wrong
+        # neighbour sets with the unstable sort.
+        neighbour_indices = np.argsort(-snn[i], kind="stable")[: k + 1]
 
         # snn.expr = exprMatrix[, neighbour_indices] — (n_genes, k+1) RAW counts
         neighbourhood = raw_mat_T[:, neighbour_indices]

@@ -144,7 +144,7 @@ def calculate_scnetwork_degree(
     ntype: Optional[int] = None,
     n_pcs: int = 10,
     n_neighbor_pcs: int = 20,
-    n_neighbors: int = 15,
+    n_neighbors: int = 20,  # matches R FindNeighbors k.param=20
     leiden_resolution: float = 0.5,
     umap_random_state: int = 42,
 ) -> dict[str, NetworkDegreeResult]:
@@ -372,52 +372,94 @@ def _degree_clustering(
 
     sc.pp.normalize_total(adata, target_sum=1e4)
     sc.pp.log1p(adata)
-    sc.pp.scale(adata)
+    # R: FindVariableFeatures runs on NORMALIZED (log1p) data, before ScaleData.
+    # Seurat VST internally uses raw counts, but the scanpy 'seurat' flavor
+    # (dispersion-based) uses the log-normalized data — so HVG selection must
+    # happen here, BEFORE sc.pp.scale, to match Seurat's pipeline order.
+    if n_genes > n_hvg:
+        sc.pp.highly_variable_genes(adata, n_top_genes=n_hvg, flavor="seurat")
+    # R's ScaleData() uses clip.max=10 by default — truncates scaled values
+    # outside [-10, 10].  Pass max_value=10 to match.
+    sc.pp.scale(adata, max_value=10.0)
     # Add tiny noise to prevent zero-variance features from crashing ARPACK
     rng = np.random.RandomState(umap_random_state)
     adata.X = adata.X + rng.normal(0, 1e-5, adata.X.shape)
 
     if n_genes > n_hvg:
-        sc.pp.highly_variable_genes(adata, n_top_genes=n_hvg, flavor="seurat")
         sc.tl.pca(adata, n_comps=n_nbr_pcs_actual, use_highly_variable=True)
     else:
         sc.tl.pca(adata, n_comps=n_nbr_pcs_actual)
 
-    # R: FindNeighbors(dims=1:20), RunUMAP(dims=1:10)
-    sc.pp.neighbors(adata, n_pcs=n_nbr_pcs_actual, n_neighbors=n_neighbors)
-    sc.tl.umap(adata, random_state=umap_random_state)
+    # R uses two separate dimensionality levels:
+    #   FindNeighbors(dims=1:20) → 20 PCs for the Leiden SNN graph
+    #   RunUMAP(dims=1:10)       → 10 PCs for the UMAP layout
+    #
+    # In scanpy, sc.pp.neighbors computes ONE graph used by both UMAP and
+    # Leiden.  To replicate R's split, we compute two separate neighbor
+    # graphs with different keys and route each downstream step to the
+    # correct one.
+    #
+    # Leiden clustering: 20 PCs (FindNeighbors default dims=1:20)
+    sc.pp.neighbors(
+        adata,
+        n_pcs=n_nbr_pcs_actual,
+        n_neighbors=n_neighbors,
+        key_added="neighbors_leiden",
+    )
     # Use igraph backend to match recommended practice and silence FutureWarning
+    # n_iterations=-1: run until convergence, matching R's Seurat FindClusters
+    # which defaults to n.iter=10 (enough to converge for these dataset sizes).
     sc.tl.leiden(
         adata,
         resolution=leiden_resolution,
         key_added="leiden",
         flavor="igraph",
-        n_iterations=2,
+        n_iterations=-1,
         directed=False,
+        neighbors_key="neighbors_leiden",
     )
+    # UMAP: 10 PCs (RunUMAP(dims=1:10))
+    sc.pp.neighbors(
+        adata,
+        n_pcs=n_pcs_actual,
+        n_neighbors=n_neighbors,
+        key_added="neighbors_umap",
+    )
+    sc.tl.umap(adata, random_state=umap_random_state, neighbors_key="neighbors_umap")
 
     umap_clusters = adata.obs["leiden"].values
     umap_ari = adjusted_rand_score(true_labels, umap_clusters)
     logger.debug(f"  [{label}] UMAP ARI = {umap_ari:.4f}")
 
     # ---- hierarchical clustering ----
+    # ---- hierarchical clustering ----
     # R: degree_hclust <- dist(cor(log(degree_data + 1)))
     #    hc1 <- hclust(degree_hclust)
     #    Cluster_hclust <- cutree(hc1, k=ntype)
     #
-    # cor() in R on a matrix acts column-wise → correlation between cells.
-    # degree_data is (genes × cells), so cor(degree_data) = corr between cells.
+    # cor() in R on a matrix (genes × cells) correlates COLUMNS (cells).
+    # This gives a (n_cells × n_cells) correlation matrix C where C[i,j]
+    # is the Pearson correlation between cell i's and cell j's log-degree
+    # vectors (across all 500 genes).
+    #
+    # CRITICAL: R's dist() applied to a matrix computes EUCLIDEAN DISTANCES
+    # between ROWS — NOT "1 - correlation".
+    #   dist(C)[i,j] = sqrt(sum((C[i,:] - C[j,:])^2))
+    # i.e. Euclidean distance between cell i's and cell j's correlation-
+    # profile vectors (each vector has length n_cells).
+    # This is provably different from 1 - C[i,j]:
+    #   dist(C)[1,2] ≈ 1.82 vs (1-C)[1,2] ≈ 1.25 (typical values).
+    # Using 1-cor produces wrong clusters and ARIs far from R's paper values.
     log_deg = np.log(degree_mat + 1)  # (n_genes, n_cells)
     # Correlation matrix between cells: (n_cells × n_cells)
-    # Suppress divide-by-zero warning from np.corrcoef for constant-valued
-    # genes (zero std); resulting NaN entries are replaced below.
+    # Suppress divide-by-zero for constant-valued genes.
     with np.errstate(invalid="ignore"):
         corr = np.corrcoef(log_deg.T)
     corr = np.nan_to_num(corr, nan=0.0)
     corr = (corr + corr.T) / 2.0  # symmetrize floating-point rounding
     np.fill_diagonal(corr, 1.0)
-    # R's dist() on a correlation matrix: dist = 1 - cor
-    dist_vec = ssd.squareform(np.clip(1.0 - corr, 0, None))
+    # R's dist(C): Euclidean distance between rows of C (= pdist on C)
+    dist_vec = ssd.pdist(corr, metric="euclidean")
     linkage = sch.linkage(dist_vec, method="complete")
     hclust_labels = sch.cut_tree(linkage, n_clusters=ntype).ravel()
     hclust_ari = adjusted_rand_score(true_labels, hclust_labels)
