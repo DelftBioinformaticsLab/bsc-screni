@@ -51,16 +51,34 @@ def _stratified_sample(
     return np.array(sorted(picks))
 
 
-def _scatter_by_category(ax, coords, labels, title, top_n=12, point_size=2):
-    """Color a scatter by category, gray for everything outside top_n labels."""
+def _scatter_by_category(
+    ax, coords, labels, title,
+    top_n=12, point_size=2, palette=None, category_order=None,
+):
+    """Color a scatter by category, gray for everything outside top_n labels.
+
+    palette : optional list of colors; cycled across categories. If None,
+        uses tab20 (good for many categories) or a colorblind-friendly
+        two-color palette when there are exactly 2 categories.
+    category_order : optional list specifying which categories to plot
+        first / in legend order; defaults to most-frequent first.
+    """
     s = pd.Series(labels)
-    top = s.value_counts().head(top_n).index.tolist()
-    colors = plt.cm.tab20(np.linspace(0, 1, len(top)))
-    for lab, c in zip(top, colors):
+    if category_order is not None:
+        cats = [c for c in category_order if c in s.unique()]
+    else:
+        cats = s.value_counts().head(top_n).index.tolist()
+    if palette is None:
+        if len(cats) == 2:
+            # Okabe-Ito blue + vermillion, colorblind-safe and high contrast.
+            palette = ["#0072B2", "#D55E00"]
+        else:
+            palette = [plt.cm.tab20(x) for x in np.linspace(0, 1, len(cats))]
+    for lab, c in zip(cats, palette):
         m = s == lab
         ax.scatter(coords[m, 0], coords[m, 1], s=point_size, c=[c],
                    label=str(lab), alpha=0.7, linewidths=0)
-    other = ~s.isin(top)
+    other = ~s.isin(cats)
     if other.any():
         ax.scatter(coords[other, 0], coords[other, 1], s=point_size * 0.5,
                    c="lightgray", alpha=0.3, linewidths=0, label="other")
@@ -80,7 +98,6 @@ def plot_paired() -> None:
     print(f"  shape: {mdata.shape}")
     print(f"  modalities: {list(mdata.mod.keys())}")
 
-    obs = mdata.obs
     if "X_wnn_umap" in mdata.obsm:
         umap_key = "X_wnn_umap"
     elif "X_umap" in mdata.obsm:
@@ -90,29 +107,41 @@ def plot_paired() -> None:
         return
     print(f"  using {umap_key}")
 
-    # Stratified subsample by Subclass for ~10k cells.
-    if "Subclass" in obs.columns:
-        strat_col = "Subclass"
-    elif "cell_type" in obs.columns:
-        strat_col = "cell_type"
-    else:
-        strat_col = obs.columns[0]
-    idx = _stratified_sample(obs, strat_col, n_total=10_000)
+    # Combine candidate columns from top-level obs AND per-modality obs.
+    # The paired h5mu was written before our slim-obs edit, so columns can
+    # live in either place depending on muon's pull-on-update behavior.
+    def _lookup(col_candidates):
+        for src in [mdata.obs] + [mdata.mod[m].obs for m in mdata.mod]:
+            for c in col_candidates:
+                if c in src.columns and src.index.equals(mdata.obs.index):
+                    return src[c]
+        return None
+
+    cell_type_series = _lookup(["Subclass", "cell_type"])
+    donor_series = _lookup(["Donor ID", "donor_id"])
+
+    if cell_type_series is None:
+        print(
+            f"  no Subclass/cell_type column found in mdata.obs or any "
+            f"modality obs — top-level cols: {list(mdata.obs.columns)}, "
+            f"rna mod cols: {list(mdata.mod['rna'].obs.columns)[:20]}"
+        )
+        return
+
+    # Stratified subsample by cell type for ~10k cells.
+    obs_for_strat = pd.DataFrame({"cell_type": cell_type_series.values})
+    idx = _stratified_sample(obs_for_strat, "cell_type", n_total=10_000)
     coords = np.asarray(mdata.obsm[umap_key])[idx]
-    sub_obs = obs.iloc[idx]
 
     fig, axes = plt.subplots(1, 2, figsize=(14, 6))
     _scatter_by_category(
-        axes[0], coords, sub_obs[strat_col].astype(str).values,
-        title=f"Paired WNN UMAP — {strat_col} (n={len(idx):,})",
+        axes[0], coords, cell_type_series.astype(str).values[idx],
+        title=f"Paired WNN UMAP — cell type (n={len(idx):,})",
     )
-    donor_col = "Donor ID" if "Donor ID" in sub_obs.columns else (
-        "donor_id" if "donor_id" in sub_obs.columns else None
-    )
-    if donor_col is not None:
+    if donor_series is not None:
         _scatter_by_category(
-            axes[1], coords, sub_obs[donor_col].astype(str).values,
-            title=f"Paired WNN UMAP — {donor_col} (n={len(idx):,})",
+            axes[1], coords, donor_series.astype(str).values[idx],
+            title=f"Paired WNN UMAP — donor (n={len(idx):,})",
         )
     else:
         axes[1].set_visible(False)
@@ -147,26 +176,29 @@ def plot_unpaired() -> None:
     if len(top_donors) == 1:
         axes = axes[None, :]
 
-    rng = np.random.RandomState(0)
+    # Plot all cells per donor (no subsampling — per-donor sizes are
+    # typically 1k–30k, which matplotlib handles fine with small markers).
+    # Modality colors are forced to a high-contrast palette; cell type uses
+    # the default tab20 across the top subclasses.
     for i, donor in enumerate(top_donors):
-        donor_mask = (a.obs[donor_col] == donor).to_numpy()
-        donor_idx = np.where(donor_mask)[0]
-        if len(donor_idx) > 2000:
-            donor_idx = rng.choice(donor_idx, size=2000, replace=False)
-            donor_idx.sort()
-
+        donor_idx = np.where((a.obs[donor_col] == donor).to_numpy())[0]
         sub_obs = a.obs.iloc[donor_idx]
         coords = np.asarray(a.obsm["X_umap"])[donor_idx]
+        # Scale marker size with cell count so dense donors stay readable.
+        pt = max(0.3, 4.0 / np.sqrt(max(len(donor_idx), 1)))
 
         _scatter_by_category(
             axes[i, 0], coords, sub_obs["modality"].astype(str).values,
             title=f"{donor}: modality (n={len(donor_idx):,})",
-            top_n=2,
+            top_n=2, point_size=pt,
+            palette=["#0072B2", "#D55E00"],
+            category_order=["RNA", "ATAC"],
         )
         ct_col = "cell_type" if "cell_type" in sub_obs.columns else "Subclass"
         _scatter_by_category(
             axes[i, 1], coords, sub_obs[ct_col].astype(str).values,
             title=f"{donor}: {ct_col} (n={len(donor_idx):,})",
+            point_size=pt,
         )
 
     plt.tight_layout()
