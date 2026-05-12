@@ -8,13 +8,17 @@
 #SBATCH --mem=400G
 
 # Phase 2 for SEA-AD PAIRED data only — independent of the unpaired job.
-# Subsamples 50 cells per subclass, selects 500 HVGs + 10k HVPs (Seurat v3
-# VST), writes seaad_paired_{rna,atac}_sub.h5ad.
+# Selects 500 HVGs (RNA) + 10k HVPs (ATAC) via Seurat v3 VST on the FULL
+# cell set (~138k cells each modality, no subsampling — that's left to
+# each sub-question). Writes seaad_paired_{rna_hvg,atac_hvp}.h5ad with
+# full SEA-AD obs preserved (object cols coerced to str), plus the joint
+# WNN-input embedding (obsm["X_pca"]) and full-set WNN k=20 nearest
+# neighbor indices (uns["wnn_neighbor_indices"]) so students can compute
+# KNN on their own cell selection.
 #
 # Prerequisite:
-#   data/processed/seaad/seaad_paired_rna.h5ad
-#   data/processed/seaad/seaad_paired_atac.h5ad
-# (both produced by `pixi run load-seaad --process`)
+#   data/processed/seaad/seaad_paired_integrated.h5mu
+# (produced by `pixi run integrate-seaad`; ~91 GB)
 #
 # Usage:
 #   sbatch slurm/run_seaad_paired_phase2.sh
