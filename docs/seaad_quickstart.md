@@ -19,7 +19,7 @@ A **default subsample is pre-baked** on the cluster (seed `42`, 50 cells per all
 
 | File pattern | What it is |
 |---|---|
-| `seaad_paired_{rna,atac}_sub42.h5ad` | Default subsample (50/type × 24 types) — Phase 3 input |
+| `seaad_paired_{rna,atac}_sub42.h5ad` | Default subsample (50/type × 24 types). Carries `obsm["X_pca"]` (joint WNN-input embedding) and `uns["knn_indices"]` (k=20 KNN on this subsample — ready for wScReNI) |
 | `seaad_paired_sub42_triplets.csv` | (TF, peak, target_gene, spearman_r) — the regulatory triplets |
 | `seaad_paired_sub42_gene_labels.csv` | Per-HVG: type = TF or target |
 | `seaad_paired_sub42_peak_overlap_matrix.npz` | Cells × correlated peaks (with Gaussian noise) — RF input |
@@ -34,7 +34,7 @@ If your sub-question needs a different cell selection (more cells per type, diff
 | Script | What it does | When to run |
 |---|---|---|
 | [scripts/run_seaad_hvg_selection.py](../scripts/run_seaad_hvg_selection.py) | Reads the 91 GB paired h5mu, writes the `_hvg.h5ad` + `_hvp.h5ad` files | Already done on cluster — re-run only to change HVG/HVP parameters |
-| [scripts/subsample_seaad_paired.py](../scripts/subsample_seaad_paired.py) (slurm: [slurm/run_subsample_seaad_paired.sh](../slurm/run_subsample_seaad_paired.sh)) | Subsamples cells from the HVG/HVP files for Phase 3. Args: `--seed`, `--n-per-type`, `--cell-types` | Default (`--seed 42`) already done on cluster; rerun if your sub-question needs a custom selection |
+| [scripts/subsample_seaad_paired.py](../scripts/subsample_seaad_paired.py) (slurm: [slurm/run_subsample_seaad_paired.sh](../slurm/run_subsample_seaad_paired.sh)) | Subsamples cells from the HVG/HVP files for Phase 3 and stores a k-NN graph in `uns["knn_indices"]`. Args: `--seed`, `--n-per-type`, `--cell-types`, `--k` | Default (`--seed 42 --k 20`) already done on cluster; rerun if your sub-question needs a custom selection |
 | [scripts/validate_phase3_outputs.py](../scripts/validate_phase3_outputs.py) | Sanity-check Phase 3 outputs (shapes, cross-references, alignment) | After Phase 3, before trusting the output |
 | [scripts/inspect_seaad_integration.py](../scripts/inspect_seaad_integration.py) | QC figures (UMAPs) for the integration | When you need to look at integration quality |
 | [scripts/check_seaad_atac_counts.py](../scripts/check_seaad_atac_counts.py) | Verifies SEA-AD ATAC `.X` is raw counts | One-off sanity check |
@@ -61,27 +61,24 @@ sbatch slurm/run_gene_peak.sh
 pixi run python scripts/validate_phase3_outputs.py --prefix seaad_paired_sub123
 ```
 
-For wScReNI / cell-specific RF networks, the four files you need are (using `{seed}=42` for the default or your own seed):
+For wScReNI / cell-specific RF networks, the four things you need are (using `{seed}=42` for the default or your own seed):
 
-- `seaad_paired_rna_sub{seed}.h5ad` — your subsample's RNA expression
+- `seaad_paired_rna_sub{seed}.h5ad` — your subsample's RNA expression, plus the k=20 KNN in `uns["knn_indices"]` for the neighbor-aware RF
 - `seaad_paired_sub{seed}_triplets.csv` — TF-peak-target constraint structure
 - `seaad_paired_sub{seed}_gene_labels.csv` — which genes are TFs
 - `seaad_paired_sub{seed}_peak_overlap_matrix.npz` — peak accessibility (RF input)
 
 ## KNN for your cell selection
 
-The HVG/HVP files carry a full-set k=20 WNN KNN in `uns["wnn_neighbor_indices"]`, but those indices reference the full 138k-cell set — **not** your subsample's positions. For your subsample, recompute KNN from `obsm["X_pca"]`:
+The sub h5ad files already include a k=20 KNN (the paper default) computed on the subsample's joint embedding (`obsm["X_pca"]`, the WNN-input space) — read it from `uns["knn_indices"]`:
 
 ```python
 import anndata as ad
-from sklearn.neighbors import NearestNeighbors
-
 rna = ad.read_h5ad("data/processed/seaad/seaad_paired_rna_sub42.h5ad")
-knn = NearestNeighbors(n_neighbors=20).fit(rna.obsm["X_pca"])
-distances, indices = knn.kneighbors(rna.obsm["X_pca"])
+knn = rna.uns["knn_indices"]           # (n_cells, k), indices into rna's rows
 ```
 
-`obsm["X_pca"]` is the WNN-input joint embedding (RNA PCA + ATAC LSI, 40 dims), preserved through subsampling.
+Indices are local to your subsample (not the full 138k set), so they're directly usable as wScReNI input. Want a different k for your sub-question? Pass `--k N` when subsampling: `sbatch slurm/run_subsample_seaad_paired.sh --seed 7 --k 50`. Or recompute from `rna.obsm["X_pca"]` directly with whatever distance metric you want.
 
 ## Caveats to know
 

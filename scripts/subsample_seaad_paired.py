@@ -29,6 +29,7 @@ from pathlib import Path
 
 import anndata as ad
 import numpy as np
+from sklearn.neighbors import NearestNeighbors
 
 logging.basicConfig(level=logging.INFO, format="%(message)s")
 logger = logging.getLogger(__name__)
@@ -36,6 +37,7 @@ logger = logging.getLogger(__name__)
 DATA = Path("data/processed/seaad")
 RNA_HVG = DATA / "seaad_paired_rna_hvg.h5ad"
 ATAC_HVP = DATA / "seaad_paired_atac_hvp.h5ad"
+DEFAULT_K = 20
 
 
 def parse_args() -> argparse.Namespace:
@@ -55,6 +57,12 @@ def parse_args() -> argparse.Namespace:
         help="Restrict to these cell types (matches obs['cell_type']). "
              "If omitted, all 24 SEA-AD subclasses are included. Subclasses "
              "with spaces/slashes must be quoted, e.g. \"L2/3 IT\".",
+    )
+    p.add_argument(
+        "--k", type=int, default=DEFAULT_K,
+        help=f"Neighbors for the KNN graph stored in uns['knn_indices'] "
+             f"(default: {DEFAULT_K}, matches the paper). The KNN is "
+             f"computed on obsm['X_pca'] of the subsample.",
     )
     p.add_argument(
         "--rna",  type=Path, default=RNA_HVG,
@@ -118,6 +126,26 @@ def main() -> None:
     rna_sub = rna[pos_idx].copy()
     atac_sub = atac[pos_idx].copy()
     assert (rna_sub.obs_names == atac_sub.obs_names).all()
+
+    # Replace the full-set WNN KNN (which would still reference 138k positions
+    # — useless on this subsample) with a freshly computed k=20 KNN on the
+    # subsample's joint WNN-input embedding (obsm['X_pca']). This is what
+    # wScReNI consumes as the cell-neighborhood structure.
+    if "X_pca" not in rna_sub.obsm:
+        raise KeyError(
+            "Missing obsm['X_pca'] in HVG input — can't recompute subsample KNN. "
+            "Re-run scripts/run_seaad_hvg_selection.py to attach it."
+        )
+    rna_sub.uns.pop("wnn_neighbor_indices", None)
+    atac_sub.uns.pop("wnn_neighbor_indices", None)
+
+    logger.info(f"Computing k={args.k} KNN on subsample obsm['X_pca'] ...")
+    nn = NearestNeighbors(n_neighbors=args.k).fit(rna_sub.obsm["X_pca"])
+    _, knn_indices = nn.kneighbors(rna_sub.obsm["X_pca"])
+    knn_indices = knn_indices.astype(np.int64)
+    rna_sub.uns["knn_indices"] = knn_indices
+    atac_sub.uns["knn_indices"] = knn_indices
+    logger.info(f"  knn_indices: shape={knn_indices.shape}")
 
     rna_out = DATA / f"seaad_paired_rna_sub{args.seed}.h5ad"
     atac_out = DATA / f"seaad_paired_atac_sub{args.seed}.h5ad"

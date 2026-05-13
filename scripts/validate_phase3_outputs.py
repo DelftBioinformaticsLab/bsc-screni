@@ -157,29 +157,30 @@ def main() -> None:
         _require(set(gl["gene"]) == set(rna.var_names),
                  "gene_labels covers exactly the HVGs in sub RNA")
 
-        # WNN KNN (carried through from Phase 2 as global uns).
-        # NOTE: uns is not sliced on subsample so the indices reference the
-        # FULL ~138k-cell set, not the n_obs subsample. For per-cell-network
-        # work students should recompute KNN on obsm["X_pca"][selected_cells].
-        if "wnn_neighbor_indices" in rna.uns:
-            knn = np.asarray(rna.uns["wnn_neighbor_indices"])
-            logger.info(f"  WNN KNN : shape={knn.shape}, dtype={knn.dtype}")
-            logger.info(
-                f"            (references full-set positions, not subsample — "
-                f"recompute on obsm['X_pca'] for subsample KNN)"
-            )
-            _require(knn.shape[1] == 20,
-                     "WNN KNN has 20 neighbors per cell")
-            _require(knn.min() >= 0 and knn.max() < knn.shape[0],
-                     "WNN KNN indices are in [0, full_n_cells)")
+        # KNN: subsample-local indices, computed by subsample_seaad_paired.py
+        # on the subsample's obsm['X_pca']. Indices reference rows within the
+        # subsample, suitable as wScReNI input directly. k is set per-run via
+        # `--k` in the subsample script (default 20).
+        if "knn_indices" in rna.uns:
+            knn = np.asarray(rna.uns["knn_indices"])
+            logger.info(f"  KNN     : shape={knn.shape}, dtype={knn.dtype}")
+            _require(knn.shape[0] == rna.n_obs,
+                     f"KNN row count ({knn.shape[0]}) matches subsample size ({rna.n_obs})")
+            _require(knn.shape[1] >= 1,
+                     f"KNN has ≥1 neighbor per cell (got k={knn.shape[1]})")
+            _require(knn.min() >= 0 and knn.max() < rna.n_obs,
+                     "KNN indices reference subsample positions, in [0, n_obs)")
         else:
-            logger.info("  WNN KNN : not present in sub RNA (ok if subsampled manually)")
+            _require(False, "uns['knn_indices'] missing — was subsample_seaad_paired.py rerun after the KNN fix?")
+        # Stale full-set KNN must NOT be present (it'd be misleading on a subsample)
+        _require("wnn_neighbor_indices" not in rna.uns,
+                 "no stale full-set wnn_neighbor_indices in subsample uns")
 
         if "X_pca" in rna.obsm:
             xp = rna.obsm["X_pca"]
             logger.info(f"  X_pca   : shape={xp.shape} (joint WNN-input embedding for subsample)")
             _require(xp.shape[0] == rna.n_obs,
-                     "X_pca row count matches sub n_obs (ready for student KNN)")
+                     "X_pca row count matches sub n_obs")
         rna.file.close(); atac.file.close()
     else:
         logger.warning(
