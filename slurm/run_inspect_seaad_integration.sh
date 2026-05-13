@@ -2,10 +2,10 @@
 #SBATCH --job-name=inspect-seaad-int
 #SBATCH --output=slurm/out/%j_inspect_seaad_integration.out
 #SBATCH --error=slurm/out/%j_inspect_seaad_integration.out
-#SBATCH --time=00:30:00
+#SBATCH --time=02:00:00
 #SBATCH --partition=general
 #SBATCH --cpus-per-task=2
-#SBATCH --mem=64G
+#SBATCH --mem=400G
 
 # Phase 1 QC: produces UMAP figures + donor-summary printout for the
 # SEA-AD integration outputs. Reads the h5mu in full (paired branch

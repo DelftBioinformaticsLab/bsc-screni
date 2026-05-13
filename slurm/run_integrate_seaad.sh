@@ -2,10 +2,11 @@
 #SBATCH --job-name=integrate-seaad
 #SBATCH --output=slurm/out/%j_integrate_seaad.out
 #SBATCH --error=slurm/out/%j_integrate_seaad.out
-#SBATCH --time=08:00:00
+#SBATCH --qos=medium
+#SBATCH --time=20:00:00
 #SBATCH --partition=general
 #SBATCH --cpus-per-task=8
-#SBATCH --mem=128G
+#SBATCH --mem=1000G
 
 # Phase 1: SEA-AD integration.
 #   - Paired branch: WNN on multiome donors (if pairing worked)

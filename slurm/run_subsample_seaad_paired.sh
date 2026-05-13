@@ -2,10 +2,10 @@
 #SBATCH --job-name=seaad-subsample
 #SBATCH --output=slurm/out/%j_subsample_seaad_paired.out
 #SBATCH --error=slurm/out/%j_subsample_seaad_paired.out
-#SBATCH --time=00:15:00
+#SBATCH --time=02:00:00
 #SBATCH --partition=general
 #SBATCH --cpus-per-task=1
-#SBATCH --mem=16G
+#SBATCH --mem=300G
 
 # Subsample the SEA-AD paired HVG/HVP files into Phase 3 input files.
 # Writes data/processed/seaad/seaad_paired_{rna,atac}_sub{seed}.h5ad.
