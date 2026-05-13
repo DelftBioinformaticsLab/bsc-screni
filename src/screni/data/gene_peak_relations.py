@@ -1038,58 +1038,63 @@ if __name__ == "__main__":
         )
         del ret_rna, ret_atac
 
-    # --- SEA-AD Paired (human hg38) ---
-    seaad_p_rna_path = seaad_dir / "seaad_paired_rna_sub.h5ad"
-    seaad_p_atac_path = seaad_dir / "seaad_paired_atac_sub.h5ad"
+    # --- SEA-AD (paired + unpaired, human hg38) ---
+    #
+    # Multi-run pattern: each subsample written by a student lives at
+    #   data/processed/seaad/seaad_{paired,unpaired}_{rna,atac}_sub{seed}.h5ad
+    # where {seed} is the random seed used during subsampling (e.g. "42").
+    # Files written with the bare "_sub.h5ad" suffix (no seed) are also picked
+    # up, for backward compatibility with the paper's single-subsample design.
+    #
+    # SEA-AD branches use the Ensembl 98 GTF (matches Phase 1 unpaired and
+    # annotates all 500 SEA-AD HVGs — GENCODE v38 silently drops ~26% of them
+    # because of Ensembl-style novel-transcript IDs like AL358075.2).
+    seaad_hs_loaded = False
+    for branch in ("paired", "unpaired"):
+        rna_files = sorted(seaad_dir.glob(f"seaad_{branch}_rna_sub*.h5ad"))
+        if not rna_files:
+            continue
 
-    if seaad_p_rna_path.exists() and seaad_p_atac_path.exists():
-        logger.info("\n" + "=" * 60)
-        logger.info("SEA-AD Paired Phase 3")
-        logger.info("=" * 60)
-
-        if "pwm_dict" not in dir() or "motif_db_hs" not in dir():
+        if not seaad_hs_loaded:
+            logger.info("\n" + "=" * 60)
+            logger.info("SEA-AD Phase 3 (Ensembl 98)")
+            logger.info("=" * 60)
             pwm_dict, motif_db_hs = load_transfac_motifs(
                 pwm_rds, paper_ref / "Tranfac201803_Hs_MotifTFsFinal",
             )
-        if "gene_ann" not in dir():
-            gene_ann = load_gene_annotations(paper_ref / "gencode.v38.annotation.gtf")
-
-        seaad_p_rna = ad.read_h5ad(seaad_p_rna_path)
-        seaad_p_atac = ad.read_h5ad(seaad_p_atac_path)
-
-        run_phase3(
-            seaad_p_rna, seaad_p_atac, gene_ann,
-            genome_fasta=ref_dir / "hg38.fa",
-            pwm_dict=pwm_dict, motif_db=motif_db_hs,
-            output_dir=seaad_dir, prefix="seaad_paired",
-        )
-        del seaad_p_rna, seaad_p_atac
-
-    # --- SEA-AD Unpaired (human hg38) ---
-    seaad_u_rna_path = seaad_dir / "seaad_unpaired_rna_sub.h5ad"
-    seaad_u_atac_path = seaad_dir / "seaad_unpaired_atac_sub.h5ad"
-
-    if seaad_u_rna_path.exists() and seaad_u_atac_path.exists():
-        logger.info("\n" + "=" * 60)
-        logger.info("SEA-AD Unpaired Phase 3")
-        logger.info("=" * 60)
-
-        if "pwm_dict" not in dir() or "motif_db_hs" not in dir():
-            pwm_dict, motif_db_hs = load_transfac_motifs(
-                pwm_rds, paper_ref / "Tranfac201803_Hs_MotifTFsFinal",
+            gene_ann_seaad = load_gene_annotations(
+                ref_dir / "hg38.ensembl98.gtf.gz",
             )
-        if "gene_ann" not in dir():
-            gene_ann = load_gene_annotations(paper_ref / "gencode.v38.annotation.gtf")
+            seaad_hs_loaded = True
 
-        seaad_u_rna = ad.read_h5ad(seaad_u_rna_path)
-        seaad_u_atac = ad.read_h5ad(seaad_u_atac_path)
+        for rna_path in rna_files:
+            # Extract suffix after "_sub" (the seed, possibly empty)
+            suffix = rna_path.stem.split("_sub", 1)[1]
+            atac_path = seaad_dir / f"seaad_{branch}_atac_sub{suffix}.h5ad"
+            if not atac_path.exists():
+                logger.warning(
+                    f"  Skipping {rna_path.name}: no matching ATAC at "
+                    f"{atac_path.name}"
+                )
+                continue
 
-        run_phase3(
-            seaad_u_rna, seaad_u_atac, gene_ann,
-            genome_fasta=ref_dir / "hg38.fa",
-            pwm_dict=pwm_dict, motif_db=motif_db_hs,
-            output_dir=seaad_dir, prefix="seaad_unpaired",
-        )
-        del seaad_u_rna, seaad_u_atac
+            run_prefix = (
+                f"seaad_{branch}_sub{suffix}" if suffix else f"seaad_{branch}"
+            )
+            logger.info(
+                f"\n  --- {run_prefix} "
+                f"(rna={rna_path.name}, atac={atac_path.name}) ---"
+            )
+
+            rna_a = ad.read_h5ad(rna_path)
+            atac_a = ad.read_h5ad(atac_path)
+
+            run_phase3(
+                rna_a, atac_a, gene_ann_seaad,
+                genome_fasta=ref_dir / "hg38.fa",
+                pwm_dict=pwm_dict, motif_db=motif_db_hs,
+                output_dir=seaad_dir, prefix=run_prefix,
+            )
+            del rna_a, atac_a
 
     logger.info("\nDone.")

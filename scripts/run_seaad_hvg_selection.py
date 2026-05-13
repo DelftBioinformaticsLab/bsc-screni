@@ -1,9 +1,7 @@
-"""Phase 2 HVG/HVP selection for SEA-AD PAIRED data.
+"""HVG / HVP selection for SEA-AD paired data (Phase 2 equivalent).
 
 Standalone counterpart to ``screni.data.feature_selection.__main__`` that
-processes the SEA-AD paired branch and nothing else. Useful while the
-unpaired integration job is still in queue or running: students need
-fresh paired files to develop against.
+processes the SEA-AD paired branch and nothing else.
 
 Selection order vs the original pipeline:
 
@@ -13,7 +11,7 @@ also has multi-donor structure: a pooled "50 cells per cell type" sample
 across 28 multiome donors mixes samples in a way that breaks downstream
 per-donor analyses. So this script doesn't subsample at all. It picks
 HVGs/HVPs on the FULL cell set (~138k cells, much more stable) and leaves
-cell selection to each sub-question.
+cell selection to each sub-question (see scripts/subsample_seaad_paired.py).
 
 Outputs (both written under data/processed/seaad/):
 
@@ -39,8 +37,8 @@ Input:
 integrated h5mu so the WNN embedding + KNN come along for free. With
 400 GB allocated the 91 GB load is comfortable.)
 
-Run via slurm/run_seaad_paired_phase2.sh or:
-  pixi run python scripts/run_seaad_paired_phase2.py
+Run via slurm/run_seaad_hvg_selection.sh or:
+  pixi run python scripts/run_seaad_hvg_selection.py
 """
 
 import gc
