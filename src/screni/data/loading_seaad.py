@@ -580,6 +580,217 @@ def qc_summary(
 
 
 # =========================================================================
+#  4f. SQ1 helpers (Ivo): condition propagator, co-pathology covariates,
+#      per-cell-type donor eligibility, donor-balanced subsampling
+# =========================================================================
+
+# AD/control binning for SQ1.  Forced by the donor counts in SEA-AD paired
+# multiome (only 3 'Not AD' donors exist; only 2 have >=50 cells in both
+# target cell types — a 2-vs-9 Wilcoxon is statistically toothless).
+# We pool the lower two ADNC categories into 'control' and the upper two
+# into 'ad'.
+ADNC_COL = "Overall AD neuropathological Change"
+ADNC_TO_CONDITION = {
+    "Not AD": "control",
+    "Low": "control",
+    "Intermediate": "ad",
+    "High": "ad",
+}
+
+# Co-pathology obs columns + the value indicating absence.  Anything other
+# than the absence value is collapsed to *_present = True.
+LATE_COL = "LATE"
+LATE_ABSENT = "Not Identified"
+LBD_COL = "Highest Lewy Body Disease"
+LBD_ABSENT_PREFIX = "Not Identified"
+
+
+def add_condition_column(
+    adata: ad.AnnData,
+    adnc_col: str = ADNC_COL,
+    inplace: bool = True,
+) -> ad.AnnData:
+    """Add a 'condition' obs column with values 'control' / 'ad' / NaN.
+
+    Pools 'Not AD' + 'Low' as control and 'Intermediate' + 'High' as ad.
+    Cells whose ADNC value is missing or unrecognised get NaN, which lets
+    downstream filters drop them cleanly via ``.dropna()``.
+    """
+    if not inplace:
+        adata = adata.copy()
+    if adnc_col not in adata.obs.columns:
+        raise KeyError(
+            f"ADNC column {adnc_col!r} not found in obs. "
+            f"Available: {list(adata.obs.columns)[:20]}..."
+        )
+    raw = adata.obs[adnc_col].astype(str)
+    mapped = raw.map(ADNC_TO_CONDITION)
+    adata.obs["condition"] = pd.Categorical(
+        mapped, categories=["control", "ad"], ordered=False
+    )
+    n_ctrl = int((adata.obs["condition"] == "control").sum())
+    n_ad = int((adata.obs["condition"] == "ad").sum())
+    n_drop = int(mapped.isna().sum())
+    logger.info(
+        f"  condition: control={n_ctrl} ad={n_ad} unmapped={n_drop} "
+        f"(unmapped cells will be dropped by downstream filters)"
+    )
+    return adata
+
+
+def add_copathology_columns(
+    adata: ad.AnnData,
+    late_col: str = LATE_COL,
+    lbd_col: str = LBD_COL,
+    inplace: bool = True,
+) -> ad.AnnData:
+    """Add boolean 'LATE_present' and 'LBD_present' obs columns.
+
+    Covariates for the per-edge differential regression.  Each is True iff
+    the corresponding raw column indicates *any* level of co-pathology
+    beyond the 'Not Identified' label.  Missing values are conservatively
+    treated as False.
+    """
+    if not inplace:
+        adata = adata.copy()
+
+    if late_col in adata.obs.columns:
+        late_raw = adata.obs[late_col].astype(str)
+        adata.obs["LATE_present"] = ~late_raw.str.startswith(LATE_ABSENT, na=False)
+    else:
+        logger.warning(f"  {late_col!r} not in obs; setting LATE_present = False")
+        adata.obs["LATE_present"] = False
+
+    if lbd_col in adata.obs.columns:
+        lbd_raw = adata.obs[lbd_col].astype(str)
+        adata.obs["LBD_present"] = ~lbd_raw.str.startswith(
+            LBD_ABSENT_PREFIX, na=False
+        )
+    else:
+        logger.warning(f"  {lbd_col!r} not in obs; setting LBD_present = False")
+        adata.obs["LBD_present"] = False
+
+    n_late = int(adata.obs["LATE_present"].sum())
+    n_lbd = int(adata.obs["LBD_present"].sum())
+    logger.info(
+        f"  co-pathology: LATE_present={n_late} cells, LBD_present={n_lbd} cells"
+    )
+    return adata
+
+
+def select_eligible_donors(
+    adata: ad.AnnData,
+    cell_type: str,
+    min_cells_per_donor: int = MIN_CELLS_PER_DONOR,
+    cell_type_col: str = "cell_type",
+    donor_col: str = "Donor ID",
+    require_condition: bool = True,
+) -> pd.DataFrame:
+    """Identify donors with adequate cells of one cell type for SQ1.
+
+    Returns the donor-level metadata table consumed by
+    :mod:`screni.data.differential` (one row per donor with condition,
+    age, sex, LATE_present, LBD_present, n_cells).
+    """
+    if cell_type_col not in adata.obs.columns:
+        raise KeyError(f"{cell_type_col!r} not in obs")
+    if donor_col not in adata.obs.columns:
+        raise KeyError(f"{donor_col!r} not in obs")
+
+    obs = adata.obs
+    mask = obs[cell_type_col] == cell_type
+    if require_condition:
+        if "condition" not in obs.columns:
+            raise KeyError(
+                "obs has no 'condition' column. "
+                "Call add_condition_column(adata) first."
+            )
+        mask = mask & obs["condition"].notna()
+
+    sub = obs.loc[mask]
+    if len(sub) == 0:
+        logger.warning(
+            f"No cells matched cell_type={cell_type!r} "
+            f"(require_condition={require_condition})"
+        )
+        return pd.DataFrame(
+            columns=["donor_id", "condition", "n_cells", "age", "sex",
+                     "LATE_present", "LBD_present"]
+        )
+
+    counts = sub.groupby(donor_col, observed=True).size()
+    eligible = counts[counts >= min_cells_per_donor].index.tolist()
+
+    rows = []
+    for d in eligible:
+        d_cells = sub.loc[sub[donor_col] == d]
+        first = d_cells.iloc[0]
+        rows.append({
+            "donor_id": d,
+            "condition": str(first.get("condition", "")),
+            "n_cells": int(len(d_cells)),
+            "age": float(first["Age at Death"])
+                if "Age at Death" in d_cells.columns
+                and pd.notna(first["Age at Death"]) else np.nan,
+            "sex": str(first["Sex"]) if "Sex" in d_cells.columns else "",
+            "LATE_present": bool(first.get("LATE_present", False)),
+            "LBD_present": bool(first.get("LBD_present", False)),
+        })
+
+    df = pd.DataFrame(rows).sort_values("donor_id").reset_index(drop=True)
+    n_ctrl = int((df["condition"] == "control").sum())
+    n_ad = int((df["condition"] == "ad").sum())
+    logger.info(
+        f"  {cell_type}: {len(df)} eligible donors "
+        f"(>= {min_cells_per_donor} cells) — control={n_ctrl} ad={n_ad}"
+    )
+    return df
+
+
+def subsample_cells_per_donor(
+    adata: ad.AnnData,
+    n_per_donor: int,
+    donor_col: str = "Donor ID",
+    cell_type: str | None = None,
+    cell_type_col: str = "cell_type",
+    seed: int = 0,
+) -> ad.AnnData:
+    """Subsample up to ``n_per_donor`` cells per donor.
+
+    Donors with fewer than ``n_per_donor`` cells keep all of theirs.  Used
+    to cap the wScReNI input size per (donor x cell type) slice so inference
+    stays within the cluster job's wall-clock budget.
+    """
+    rng = np.random.default_rng(seed)
+
+    if cell_type is not None:
+        if cell_type_col not in adata.obs.columns:
+            raise KeyError(f"{cell_type_col!r} not in obs")
+        adata = adata[adata.obs[cell_type_col] == cell_type].copy()
+
+    if donor_col not in adata.obs.columns:
+        raise KeyError(f"{donor_col!r} not in obs")
+
+    chosen_idx: list[int] = []
+    for donor, _grp in adata.obs.groupby(donor_col, observed=True):
+        positions = np.flatnonzero(adata.obs[donor_col].values == donor)
+        if len(positions) <= n_per_donor:
+            chosen_idx.extend(positions.tolist())
+        else:
+            picked = rng.choice(positions, size=n_per_donor, replace=False)
+            chosen_idx.extend(sorted(picked.tolist()))
+
+    chosen_idx = sorted(set(chosen_idx))
+    sub = adata[chosen_idx].copy()
+    logger.info(
+        f"  subsampled to {sub.n_obs} cells across "
+        f"{sub.obs[donor_col].nunique()} donors "
+        f"(target {n_per_donor}/donor, cell_type={cell_type})"
+    )
+    return sub
+
+
+# =========================================================================
 #  Main
 # =========================================================================
 
