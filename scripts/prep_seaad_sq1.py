@@ -54,7 +54,9 @@ SUB_TAG = "sq1"
 TARGET_CELL_TYPES = ["Microglia-PVM", "L2/3 IT"]
 N_CELLS_PER_DONOR = 50
 MIN_CELLS_PER_DONOR = 50
-N_GENES = 500
+N_GENES = 2000        # widened from 500 to capture lower-variance regulatory TFs
+                       #   (SPI1/IRF8/CEBPB for microglia, REST/MEF2C for neurons)
+                       #   that the top-500 HVG cut had missed
 N_PEAKS = 10000
 KNN_K = 20
 SEED = 42
