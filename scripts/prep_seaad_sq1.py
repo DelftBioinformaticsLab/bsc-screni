@@ -133,16 +133,27 @@ def main() -> int:
     logger.info(f"\n  union of eligible donors: {len(eligible_donors)}")
 
     # ---- Step 3: donor-stratified subsample + pairing ------------------------
-    logger.info("\n=== Step 3: donor-stratified subsample + pair RNA<->ATAC ===")
+    # Subsample 50 cells per (donor x cell_type), then concat across cell types.
+    # Doing it per cell type is critical: SeaAD has ~10x more L2/3 IT than
+    # Microglia-PVM, and sampling globally per donor would shrink the microglia
+    # pool to single-digits per donor.
+    logger.info("\n=== Step 3: donor-stratified subsample (per (donor x cell_type)) ===")
     rna_e = rna_f[rna_f.obs["Donor ID"].isin(eligible_donors)].copy()
     atac_e = atac_f[atac_f.obs["Donor ID"].isin(eligible_donors)].copy()
     del rna_f, atac_f
 
-    rna_sub = subsample_cells_per_donor(
-        rna_e, n_per_donor=N_CELLS_PER_DONOR,
-        donor_col="Donor ID", cell_type=None,
-        cell_type_col="cell_type", seed=SEED,
-    )
+    rna_subs = []
+    for ct in TARGET_CELL_TYPES:
+        sub_ct = subsample_cells_per_donor(
+            rna_e, n_per_donor=N_CELLS_PER_DONOR,
+            donor_col="Donor ID", cell_type=ct, cell_type_col="cell_type",
+            seed=SEED,
+        )
+        logger.info(f"  {ct}: {sub_ct.n_obs} cells across "
+                    f"{sub_ct.obs['Donor ID'].nunique()} donors")
+        rna_subs.append(sub_ct)
+    rna_sub = ad.concat(rna_subs, axis=0, join="outer", index_unique=None)
+    del rna_subs
 
     shared = sorted(set(rna_sub.obs_names) & set(atac_e.obs_names))
     if len(shared) < rna_sub.n_obs:
@@ -158,13 +169,25 @@ def main() -> int:
     logger.info("\n" + counts.to_string())
 
     # ---- Step 4: WNN embedding via h5py (avoid full 94 GB load) --------------
+    # AnnData stores obs_names indirectly: the obs group has a '_index'
+    # attribute holding the name of the dataset that contains the index
+    # values. In this file that dataset is 'exp_component_name' (not the
+    # literal '_index' you'd get from a freshly-written AnnData).
     logger.info("\n=== Step 4: pull joint embedding for the subsampled cells (h5py) ===")
     EMB_KEY = "X_pca"
     MOD_NAME = "rna"
     with h5py.File(INTEGRATED, "r") as f:
+        obs_grp = f[f"mod/{MOD_NAME}/obs"]
+        idx_attr = obs_grp.attrs.get("_index", "_index")
+        if isinstance(idx_attr, bytes):
+            idx_attr = idx_attr.decode()
+        if idx_attr not in obs_grp:
+            raise RuntimeError(
+                f"obs/_index attr says {idx_attr!r} but that dataset is missing"
+            )
         full_obs_names = [
             n.decode() if isinstance(n, bytes) else n
-            for n in f[f"mod/{MOD_NAME}/obs/_index"][:]
+            for n in obs_grp[idx_attr][:]
         ]
         name_to_row = {n: i for i, n in enumerate(full_obs_names)}
         rows = [name_to_row[c] for c in rna_sub.obs_names if c in name_to_row]
@@ -178,7 +201,7 @@ def main() -> int:
     embedding_cell_names = list(rna_sub.obs_names)
     logger.info(
         f"  embedding pulled: {embedding.shape} "
-        f"(from mod/{MOD_NAME}/obsm/{EMB_KEY})"
+        f"(via mod/{MOD_NAME}/obs/{idx_attr} -> mod/{MOD_NAME}/obsm/{EMB_KEY})"
     )
 
     # ---- Step 5: Phase 2 (HVG/HVP + KNN) -------------------------------------
