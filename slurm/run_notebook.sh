@@ -8,6 +8,7 @@
 #SBATCH --error=slurm/out/%j_%x.out
 #SBATCH --time=08:00:00
 #SBATCH --partition=general
+#SBATCH --qos=medium
 #SBATCH --cpus-per-task=16
 #SBATCH --mem=128G
 
