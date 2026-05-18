@@ -23,6 +23,7 @@ inspect-seaad-integration = { cmd = "python scripts/inspect_seaad_integration.py
 check-seaad-atac-counts = { cmd = "python scripts/check_seaad_atac_counts.py", env = { PYTHONPATH = "src" } }
 seaad-hvg-selection = { cmd = "python scripts/run_seaad_hvg_selection.py", env = { PYTHONPATH = "src" } }
 gene-peak = { cmd = "python -m screni.data.gene_peak_relations", env = { PYTHONPATH = "src" } }
+test = { cmd = "pytest", env = { PYTHONPATH = "src" } }
 
 [dependencies]
 ipykernel = "*"
