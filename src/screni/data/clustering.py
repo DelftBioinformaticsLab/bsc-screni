@@ -381,6 +381,7 @@ def _degree_clustering(
     # R's ScaleData() uses clip.max=10 by default — truncates scaled values
     # outside [-10, 10].  Pass max_value=10 to match.
     sc.pp.scale(adata, max_value=10.0)
+    adata.X = np.nan_to_num(adata.X, nan=0.0)
     # Add tiny noise to prevent zero-variance features from crashing ARPACK
     rng = np.random.RandomState(umap_random_state)
     adata.X = adata.X + rng.normal(0, 1e-5, adata.X.shape)

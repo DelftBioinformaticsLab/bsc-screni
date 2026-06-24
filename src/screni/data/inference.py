@@ -843,6 +843,12 @@ class GenePeakOverlapLabs:
         self._gene_to_peaks: dict[str, list[str]] = defaultdict(list)
         self._gene_to_labels: dict[str, list[str]] = defaultdict(list)
         self._gene_to_tfs: dict[str, set[str]] = defaultdict(set)
+        # Per-TF peak lookup: (target_gene, tf_gene) -> set of peak names.
+        # Each peak in this set contains a binding motif for that specific TF
+        # near that specific target gene — i.e. I_ij^(l) = 1 for these peaks.
+        # This is the data structure required to compute sum_l(p_il * I_ij^(l))
+        # as a per-TF sum rather than summing all peaks for the target gene.
+        self._target_tf_to_peaks: dict[tuple[str, str], set[str]] = defaultdict(set)
 
         for gene, peak, label, tf_str in zip(
             self.genes, self.peaks, self.labels, self.tfs
@@ -852,6 +858,7 @@ class GenePeakOverlapLabs:
             for tf in tf_str.split(";"):
                 if tf:
                     self._gene_to_tfs[gene].add(tf)
+                    self._target_tf_to_peaks[(gene, tf)].add(peak)
 
     # ------------------------------------------------------------------
     # Convenience accessors (mirroring R's @ slot-subsetting idiom)
@@ -880,6 +887,17 @@ class GenePeakOverlapLabs:
     def tfs_for_gene(self, gene: str) -> set[str]:
         """Set of TF names that regulate *gene* (R: ``@TFs[@genes == gene]``, split by ``;``)."""
         return self._gene_to_tfs.get(gene, set())
+
+    def peaks_for_tf_target(self, target: str, tf: str) -> set[str]:
+        """Peaks near *target* gene that contain a binding motif for *tf*.
+
+        This is the set of peaks l where ``I_ij^(l) = 1`` for the specific
+        (target gene i, TF gene j) pair.  Used to compute the per-TF ATAC
+        boost ``sum_l(p_il * I_ij^(l))`` as described in the paper, where
+        the sum runs only over peaks where TF j's motif is present, not over
+        all peaks near the target gene.
+        """
+        return self._target_tf_to_peaks.get((target, tf), set())
 
     @classmethod
     def from_dataframe(cls, df: pd.DataFrame) -> "GenePeakOverlapLabs":
@@ -931,6 +949,7 @@ def _gene_peak_random_forest(
     n_jobs: int = 1,
     importance_measure: str = "IncNodePurity",
     seed: Optional[int] = None,
+    use_per_tf_atac_bugfix: bool = False,
 ) -> np.ndarray:
     """Compute gene-regulatory weights using random forest feature importance.
 
@@ -988,6 +1007,11 @@ def _gene_peak_random_forest(
         importance via ``sklearn.inspection.permutation_importance``).
     seed
         Random seed passed to every ``RandomForestRegressor``.
+    use_per_tf_atac_bugfix
+        When ``False`` (default), reproduce the original R wScReNI formula:
+        every TF regulator of a target receives the same sum of importances
+        over all peaks linked to that target.  When ``True``, use the stricter
+        per-TF bugfix that sums only target peaks containing that TF's motif.
 
     Returns
     -------
@@ -1014,6 +1038,18 @@ def _gene_peak_random_forest(
         g: {peak_idx[p] for p in labs.peaks_for_gene(g) if p in peak_idx}
         for g in gene_names
     }
+
+    # The per-TF sets are used only by the optional bugfix. Normal wScReNI
+    # follows the original R implementation and uses all target-linked peaks.
+    tf_target_peak_idx: dict[tuple[str, str], frozenset[int]] = {}
+    if use_per_tf_atac_bugfix:
+        for g in gene_names:
+            for tf in labs.tfs_for_gene(g):
+                tf_pks = frozenset(
+                    peak_idx[p] for p in labs.peaks_for_tf_target(g, tf) if p in peak_idx
+                )
+                if tf_pks:
+                    tf_target_peak_idx[(g, tf)] = tf_pks
 
     def _process_one_target(t_idx: int) -> np.ndarray:
         """Return the weight column for target gene at index *t_idx*."""
@@ -1074,14 +1110,12 @@ def _gene_peak_random_forest(
         #   — first (n_genes-1) entries correspond to other_genes_idx
         #   — last  n_peaks    entries correspond to peak order
 
-        # Importance of peaks for the target gene
-        t_peak_idxs = target_peak_sets.get(target_name, set())
-        y_peak_coef = sum(
-            importances[n_genes - 1 + pi] for pi in t_peak_idxs
-        )
-
         # TFs that regulate the target gene (for weight boosting)
         target_tfs: set[str] = labs.tfs_for_gene(target_name)
+        target_peak_idxs = target_peak_sets.get(target_name, set())
+        y_peak_coef = sum(
+            importances[n_genes - 1 + pi] for pi in target_peak_idxs
+        )
 
         # Importance of peaks for each regulator gene j; direct gene importance
         for col_pos, g_idx in enumerate(other_genes_idx):
@@ -1095,14 +1129,31 @@ def _gene_peak_random_forest(
             )
 
             if gene_name_j in target_tfs:
-                weight_col[g_idx] = direct_j + y_peak_coef + peak_j_coef
+                if use_per_tf_atac_bugfix:
+                    tf_peak_idxs = tf_target_peak_idx.get(
+                        (target_name, gene_name_j), frozenset()
+                    )
+                    y_peak_coef_j = sum(
+                        importances[n_genes - 1 + pi] for pi in tf_peak_idxs
+                    )
+                else:
+                    y_peak_coef_j = y_peak_coef
+                weight_col[g_idx] = direct_j + y_peak_coef_j + peak_j_coef
             else:
                 weight_col[g_idx] = direct_j + peak_j_coef
 
         # Self-weight for the target gene
         target_label = labs.label_for_gene(target_name)
         if target_label == "TF":
-            weight_col[t_idx] = y_peak_coef
+            if use_per_tf_atac_bugfix:
+                self_tf_peak_idxs = tf_target_peak_idx.get(
+                    (target_name, target_name), frozenset()
+                )
+                weight_col[t_idx] = sum(
+                    importances[n_genes - 1 + pi] for pi in self_tf_peak_idxs
+                )
+            else:
+                weight_col[t_idx] = y_peak_coef
         else:
             weight_col[t_idx] = 0.0
 
@@ -1141,6 +1192,7 @@ def infer_wscreni_networks(
     n_trees: int = 100,
     seed: int = 100,
     importance_measure: str = "IncNodePurity",
+    use_per_tf_atac_bugfix: bool = False,
     gene_names: Optional[list[str]] = None,
     cell_names: Optional[list[str]] = None,
     peak_names: Optional[list[str]] = None,
@@ -1207,6 +1259,9 @@ def infer_wscreni_networks(
     importance_measure
         ``'IncNodePurity'`` (default) or ``'%IncMSE'``.  Passed to
         :func:`_gene_peak_random_forest`.
+    use_per_tf_atac_bugfix
+        Use the per-TF motif-filtered ATAC boost instead of normal wScReNI's
+        original R-compatible shared target-peak boost. Default ``False``.
     gene_names
         Gene labels when *expr* is a plain ndarray.
     cell_names
@@ -1334,6 +1389,7 @@ def infer_wscreni_networks(
                 n_jobs=n_jobs,
                 importance_measure=importance_measure,
                 seed=seed,
+                use_per_tf_atac_bugfix=use_per_tf_atac_bugfix,
             )  # (n_genes, n_genes)
 
             # Write to disk using the same convention as combine_wscreni_networks
