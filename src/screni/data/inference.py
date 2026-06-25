@@ -1125,12 +1125,10 @@ def _gene_peak_random_forest(
 # ---------------------------------------------------------------------------
 # wScReNI — public network inference
 # ---------------------------------------------------------------------------
-
-
 def infer_wscreni_networks(
     expr: Union[np.ndarray, pd.DataFrame, "ad.AnnData"],
     peak_mat: Union[np.ndarray, pd.DataFrame, "ad.AnnData"],
-    labs: "GenePeakOverlapLabs",
+    labs: Union["GenePeakOverlapLabs", dict[str, "GenePeakOverlapLabs"]],
     nearest_neighbors_idx: np.ndarray,
     network_path: Union[str, "Path"],
     *,
@@ -1145,103 +1143,17 @@ def infer_wscreni_networks(
     cell_names: Optional[list[str]] = None,
     peak_names: Optional[list[str]] = None,
 ) -> ScReniNetworks:
-    """Infer cell-specific regulatory networks using wScReNI.
-
-    Matches ``Infer_wScReNI_scNetworks()`` from ``Infer_wScReNI_scNetworks.R``.
-
-    For each cell, this function:
-
-    1. Collects the cell itself plus its WNN neighbours from both the
-       expression matrix and the peak-accessibility matrix.
-    2. Runs :func:`_gene_peak_random_forest` on that local neighbourhood
-       to compute gene-regulatory weights incorporating peak accessibility.
-    3. Writes the resulting ``(n_genes × n_genes)`` weight matrix to disk as
-       ``<network_path>/wScReNI/<1-based-idx>.<cell_name>.network.txt``.
-    4. Returns all per-cell networks as a :class:`ScReniNetworks` dict.
-
-    The file format is identical to what ``combine_wscreni_networks`` expects,
-    so that function can reload the saved networks from disk later.
-
-    Parameters
-    ----------
-    expr
-        Expression matrix.  Accepted formats:
-
-        - ``AnnData``: cells × genes, raw counts in ``.X``
-        - ``DataFrame``: cells × genes (index = cell names, columns = gene names)
-        - ``ndarray``: cells × genes (provide *gene_names* / *cell_names*)
-    peak_mat
-        Peak-accessibility matrix.
-
-        - ``AnnData``: cells × peaks in ``.X``
-        - ``DataFrame``: cells × peaks (index = cell names, columns = peak names)
-        - ``ndarray``: cells × peaks (provide *peak_names* / *cell_names*)
-
-        Must have the same number of cells (rows) as *expr* and the same cell
-        ordering.  Corresponds to ``gene_peak_overlap_matrix`` in the R code.
-    labs
-        Gene–peak–TF label object (:class:`GenePeakOverlapLabs`).  Typically
-        built via :meth:`GenePeakOverlapLabs.from_dataframe`.
-    nearest_neighbors_idx
-        Integer array of shape ``(n_cells, k)`` with 0-based column indices
-        giving the *k* WNN nearest neighbours for each cell.  Matches
-        ``nearest.neighbors.idx`` in the R code (R is 1-based; Python 0-based).
-    network_path
-        Parent directory to write per-cell files into.  The sub-folder
-        ``wScReNI/`` is created automatically.
-    data_name
-        Optional label prepended to log messages; mirrors R's ``data.name``.
-    cell_index
-        Optional 0-based list of cell indices to process.  When ``None``
-        (default), all cells are processed.  Mirrors R's ``cell.index``.
-    n_jobs
-        Joblib parallel workers for the per-gene RF loop inside each cell's
-        :func:`_gene_peak_random_forest` call.  Default 1 (sequential).
-    max_cells_per_batch
-        Number of cells processed per progress-reporting batch.  Default 10.
-        Mirrors R's ``max.cell.per.batch``.
-    n_trees
-        Trees per random forest.  Default 100.
-    seed
-        Random seed.  Default 100.
-    importance_measure
-        ``'IncNodePurity'`` (default) or ``'%IncMSE'``.  Passed to
-        :func:`_gene_peak_random_forest`.
-    gene_names
-        Gene labels when *expr* is a plain ndarray.
-    cell_names
-        Cell labels when *expr* is a plain ndarray.
-    peak_names
-        Peak labels when *peak_mat* is a plain ndarray.
-
-    Returns
-    -------
-    ScReniNetworks
-        ``{cell_name: (n_genes, n_genes) weight_matrix}`` for each processed
-        cell.  Gene names are stored in ``.gene_names``.  Written files can
-        be reloaded later with :func:`~screni.data.combine.combine_wscreni_networks`.
-
-    Examples
-    --------
-    >>> labs = GenePeakOverlapLabs.from_dataframe(triplets_df)
-    >>> knn = np.load("retinal_knn_indices.npy")   # (n_cells, k)
-    >>> networks = infer_wscreni_networks(
-    ...     rna_adata, atac_adata, labs, knn,
-    ...     network_path="output/networks",
-    ...     n_jobs=4,
-    ... )
-    >>> weight_mat = networks["AAACCTGAGAAACCAT-1"]  # shape (n_genes, n_genes)
-    """
+    """Infer cell-specific regulatory networks using wScReNI."""
     network_path = Path(network_path)
 
     # ------------------------------------------------------------------
-    # Resolve expression matrix → (n_cells, n_genes)
+    # Resolve expression matrix -> (n_cells, n_genes)
     # ------------------------------------------------------------------
     raw_mat, _gene_names, _cell_names = _resolve_input(expr, gene_names, cell_names)
     n_cells, n_genes = raw_mat.shape
 
     # ------------------------------------------------------------------
-    # Resolve peak matrix → (n_cells, n_peaks)
+    # Resolve peak matrix -> (n_cells, n_peaks)
     # ------------------------------------------------------------------
     if isinstance(peak_mat, ad.AnnData):
         peak_arr = (
@@ -1295,7 +1207,7 @@ def infer_wscreni_networks(
     # Main loop: process cells in batches for progress reporting
     # ------------------------------------------------------------------
     networks = ScReniNetworks(gene_names=_gene_names)
-
+    
     n_batches = (n_to_process + max_cells_per_batch - 1) // max_cells_per_batch
 
     for batch_idx in range(n_batches):
@@ -1313,35 +1225,54 @@ def infer_wscreni_networks(
 
         for cell_i in batch:
             cell_name = _cell_names[cell_i]
+            
+            # Determine cell type and HVGs if applicable
+            ct = None
+            ct_hvgs = None
+            if isinstance(expr, ad.AnnData) and 'cell_type' in expr.obs:
+                ct = expr.obs['cell_type'].iloc[cell_i]
+                if 'cell_type_hvgs' in expr.uns and ct in expr.uns['cell_type_hvgs']:
+                    ct_hvgs = expr.uns['cell_type_hvgs'][ct]
+            
+            # Determine which labs to use
+            if isinstance(labs, dict):
+                current_labs = labs.get(ct, next(iter(labs.values())))
+            else:
+                current_labs = labs
 
             # Gather neighbour indices for this cell
-            # nearest_neighbors_idx[cell_i] is 0-based (Python convention)
-            neighbour_idxs = nearest_neighbors_idx[cell_i]  # 1-D array of 0-based idxs
+            neighbour_idxs = nearest_neighbors_idx[cell_i]  
             neighborhood = np.concatenate([[cell_i], neighbour_idxs])
 
-            # Extract neighbourhood sub-matrices
-            wnn_expr = raw_mat[neighborhood, :]   # (k+1, n_genes)
-            wnn_peak = peak_arr[neighborhood, :]  # (k+1, n_peaks)
+            if ct_hvgs is not None:
+                # Subset expression and gene names to cell type specific HVGs
+                gene_indices = [i for i, g in enumerate(_gene_names) if g in ct_hvgs]
+                current_gene_names = [_gene_names[i] for i in gene_indices]
+                wnn_expr = raw_mat[neighborhood, :][:, gene_indices]
+            else:
+                current_gene_names = _gene_names
+                wnn_expr = raw_mat[neighborhood, :]
+
+            wnn_peak = peak_arr[neighborhood, :]  
 
             # Compute wScReNI weights via random forest
             sc_res = _gene_peak_random_forest(
                 wnn_expr,
                 wnn_peak,
-                labs,
-                _gene_names,
+                current_labs,
+                current_gene_names,
                 _peak_names,
                 n_trees=n_trees,
                 n_jobs=n_jobs,
                 importance_measure=importance_measure,
                 seed=seed,
-            )  # (n_genes, n_genes)
+            ) 
 
-            # Write to disk using the same convention as combine_wscreni_networks
-            # File: <1-based-idx>.<cell_name>.network.txt
-            # R: write.table(sc_res, paste0(network.path, "wScReNI/", i, ".", tmp_name, ".network.txt"), sep="\t")
-            file_num = cell_i + 1  # convert to 1-based index
+            file_num = cell_i + 1
             filename = wscreni_dir / f"{file_num}.{cell_name}.network.txt"
-            df_out = pd.DataFrame(sc_res, index=_gene_names, columns=_gene_names)
+            
+            # Save using the subsetted gene names
+            df_out = pd.DataFrame(sc_res, index=current_gene_names, columns=current_gene_names)
             df_out.to_csv(filename, sep="\t")
 
             networks[cell_name] = sc_res
@@ -1349,7 +1280,6 @@ def infer_wscreni_networks(
             logger.debug(f"{prefix}  [{cell_i + 1}/{n_cells}] {cell_name} written.")
 
     logger.info(
-        f"{prefix}wScReNI complete: {len(networks)} networks, "
-        f"shape {(n_genes, n_genes)}"
+        f"{prefix}wScReNI complete: {len(networks)} networks."
     )
     return networks

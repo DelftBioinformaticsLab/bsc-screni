@@ -374,7 +374,7 @@ if __name__ == "__main__":
     triplets = pd.read_csv(f"{BASE}_triplets.csv")         # target_gene | peak | spearman_r | TF
     labels   = pd.read_csv(f"{BASE}_gene_labels.csv")      # gene | type | associated_peaks | associated_TFs
 
-    peak_matrix   = np.load(f"../../../data/processed/peak_matrix.npy")
+    peak_matrix   = np.load(f"../../../data/processed/peak_overlap_matrix_type.npy")
     # peak_matrix = peak_data["peak_matrix"]                 # (400, 217)
     # 2. expr_matrix: genes × cells
     # AnnData is cells × genes; wScReNI expects genes × cells — transpose

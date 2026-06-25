@@ -1,11 +1,11 @@
 #!/bin/bash
-#SBATCH --job-name=compare-analyse
-#SBATCH --output=slurm/out/%j_compare_analyse.out
-#SBATCH --error=slurm/out/%j_compare_analyse.out
-#SBATCH --time=00:40:00
+#SBATCH --job-name=compare-analyse_type
+#SBATCH --output=slurm/out/%j_compare_analyse_type.out
+#SBATCH --error=slurm/out/%j_compare_analyse_type.out
+#SBATCH --time=01:00:00
 #SBATCH --partition=general
 #SBATCH --cpus-per-task=8
-#SBATCH --mem=16G
+#SBATCH --mem=64G
 
 # Stage 2 of 2: Load cached networks, compute clustering ARI, precision/recall,
 # and generate all comparison figures.
@@ -21,11 +21,11 @@
 #   The cache is at output/comparison/cache/*.npz
 #
 # Usage:
-#   sbatch slurm/run_compare_analyse.sh
+#   sbatch slurm/run_compare_analyse_type.sh
 #
 # To submit stage 2 automatically after stage 1 finishes:
 #   INFER_JOB=$(sbatch --parsable slurm/run_compare_infer.sh)
-#   sbatch --dependency=afterok:$INFER_JOB slurm/run_compare_analyse.sh
+#   sbatch --dependency=afterok:$INFER_JOB slurm/run_compare_analyse_type.sh
 
 set -euo pipefail
 
@@ -40,7 +40,7 @@ fi
 CACHE_DIR="output/comparison/cache"
 if [[ ! -d "$CACHE_DIR" ]] || [[ -z "$(ls -A "$CACHE_DIR" 2>/dev/null)" ]]; then
     echo "ERROR: Cache directory empty or missing: $CACHE_DIR"
-    echo "  Run run_compare_infer.sh first."
+    echo "  Run run_compare_infer_type.sh first."
     exit 1
 fi
 
@@ -61,14 +61,14 @@ apptainer exec \
     --bind src/:/opt/app/src/ \
     --bind data/:/opt/app/data/ \
     --bind output/:/opt/app/output/ \
-    --bind compare_with_r.py:/opt/app/compare_with_r.py \
+    --bind compare_with_r_type.py:/opt/app/compare_with_r_type.py \
     --bind ../data/:/opt/app/ScReNI-master/data/ \
     --bind ../refer/:/opt/app/ScReNI-master/refer/ \
     --env PYTHONPATH=/opt/app/src \
     --env SLURM_CPUS_PER_TASK=${SLURM_CPUS_PER_TASK:-1} \
     "$CONTAINER" \
     pixi run --manifest-path /opt/app/pixi.toml \
-    python -u /opt/app/compare_with_r.py --stage analyse
+    python -u /opt/app/compare_with_r_type.py --stage analyse
 
 echo
 echo "Finished : $(date)"

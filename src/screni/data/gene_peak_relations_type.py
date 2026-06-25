@@ -819,81 +819,37 @@ def prepare_rf_inputs(
 #  Convenience: run full Phase 3
 # =========================================================================
 
-
-def run_phase3(
+def _run_phase3_core(
     rna_adata: ad.AnnData,
     atac_adata: ad.AnnData,
     gene_annotations: pd.DataFrame,
-    genome_fasta: Path | str | None = None,
-    pwm_dict: dict[str, np.ndarray] | None = None,
-    motif_db: pd.DataFrame | None = None,
-    upstream_bp: int = DEFAULT_UPSTREAM_BP,
-    downstream_bp: int = DEFAULT_DOWNSTREAM_BP,
-    corr_threshold: float = DEFAULT_CORR_THRESHOLD,
-    motif_pvalue: float = DEFAULT_MOTIF_PVALUE,
-    gene_name_type: str = "symbol",
-    output_dir: Path | str | None = None,
-    prefix: str = "retinal",
+    hvg_names: list[str],
+    genome_fasta: Path | str | None,
+    pwm_dict: dict[str, np.ndarray] | None,
+    motif_db: pd.DataFrame | None,
+    upstream_bp: int,
+    downstream_bp: int,
+    corr_threshold: float,
+    motif_pvalue: float,
+    gene_name_type: str,
+    output_dir: Path | str | None,
+    prefix: str
 ) -> dict:
-    """Run the full Phase 3 pipeline.
-
-    Parameters
-    ----------
-    rna_adata
-        Subsampled RNA AnnData (400 cells x 500 HVGs, raw counts).
-    atac_adata
-        Subsampled ATAC AnnData (400 cells x 10,000 peaks, raw counts).
-    gene_annotations
-        Gene body coordinates from GTF.
-    genome_fasta
-        Path to genome FASTA (required for motif matching).
-    pwm_dict
-        TRANSFAC PWMs from ``load_transfac_motifs`` (required for motif matching).
-    motif_db
-        TRANSFAC motif database from ``load_transfac_motifs`` (required for motif matching).
-    upstream_bp, downstream_bp
-        TSS window for peak-gene overlap.
-    corr_threshold
-        Minimum |Spearman r| for gene-peak pairs.
-    motif_pvalue
-        P-value cutoff for motif matching.
-    gene_name_type
-        'symbol' or 'id' — which TRANSFAC column to use for TF names.
-    output_dir
-        If given, save intermediate results here.
-    prefix
-        Filename prefix for outputs (e.g., 'retinal' or 'pbmc').
-
-    Returns
-    -------
-    Dict with keys: overlap_pairs, correlated_pairs, motif_matches,
-    triplets, gene_labels, peak_matrix, peak_info.
-    """
-    logger.info(f"=== Phase 3: Gene-Peak-TF Relationships ({prefix}) ===")
-
-    hvg_names = rna_adata.var_names.tolist()
+    """Core logic extracted from run_phase3."""
     peak_names = atac_adata.var_names.tolist()
 
     # 3a: Peak-gene overlap
     overlap_pairs = find_peak_gene_overlaps(
-        gene_annotations,
-        peak_names,
-        hvg_names,
-        upstream_bp=upstream_bp,
-        downstream_bp=downstream_bp,
+        gene_annotations, peak_names, hvg_names,
+        upstream_bp=upstream_bp, downstream_bp=downstream_bp,
     )
 
     # 3b: Correlation filtering
     correlated_pairs = filter_by_correlation(
-        overlap_pairs,
-        rna_adata,
-        atac_adata,
-        threshold=corr_threshold,
+        overlap_pairs, rna_adata, atac_adata, threshold=corr_threshold,
     )
 
     # 3c: Motif matching
-    # Only scan peaks that survived correlation filtering (matching R's
-    # reduce(peak_gene_overlap_GR2) which only scans correlated peaks).
     if genome_fasta is not None and pwm_dict is not None and motif_db is not None:
         correlated_peak_names = sorted(correlated_pairs["peak"].unique())
         logger.info(
@@ -901,13 +857,8 @@ def run_phase3(
             f"correlated peaks (of {len(peak_names)} total)"
         )
         motif_matches = match_motifs_to_peaks(
-            correlated_peak_names,
-            genome_fasta,
-            pwm_dict,
-            motif_db,
-            hvg_names,
-            pvalue_cutoff=motif_pvalue,
-            gene_name_type=gene_name_type,
+            correlated_peak_names, genome_fasta, pwm_dict, motif_db,
+            hvg_names, pvalue_cutoff=motif_pvalue, gene_name_type=gene_name_type,
         )
     else:
         logger.warning(
@@ -918,18 +869,14 @@ def run_phase3(
 
     # 3d: Triplet assembly
     triplets, gene_labels = assemble_triplets(
-        correlated_pairs,
-        motif_matches,
+        correlated_pairs, motif_matches,
         motif_db if motif_db is not None else pd.DataFrame(columns=["Accession", "TFs", "EnsemblID"]),
-        hvg_names,
-        gene_name_type=gene_name_type,
+        hvg_names, gene_name_type=gene_name_type,
     )
 
     # 3e: Prepare RF inputs
     peak_matrix, peak_info = prepare_rf_inputs(
-        atac_adata,
-        correlated_pairs,
-        gene_labels,
+        atac_adata, correlated_pairs, gene_labels,
     )
 
     results = {
@@ -947,24 +894,64 @@ def run_phase3(
         output_dir = Path(output_dir)
         output_dir.mkdir(parents=True, exist_ok=True)
 
-        correlated_pairs.to_csv(
-            output_dir / f"{prefix}_peak_gene_pairs.csv", index=False
-        )
-        motif_matches.to_csv(
-            output_dir / f"{prefix}_motif_peak_pairs.csv", index=False
-        )
-        triplets.to_csv(output_dir / f"{prefix}_triplets.csv", index=False)
-        gene_labels.to_csv(output_dir / f"{prefix}_gene_labels.csv", index=False)
-        np.savez_compressed(
-            output_dir / f"{prefix}_peak_overlap_matrix.npz",
-            peak_matrix=peak_matrix,
-        )
-        peak_info.to_csv(output_dir / f"{prefix}_peak_info.csv", index=False)
-
-        logger.info(f"  Saved Phase 3 outputs to {output_dir}")
+        correlated_pairs.to_csv(output_dir / f"{prefix}_peak_gene_pairs_type.csv", index=False)
+        motif_matches.to_csv(output_dir / f"{prefix}_motif_peak_pairs_type.csv", index=False)
+        triplets.to_csv(output_dir / f"{prefix}_triplets_type.csv", index=False)
+        gene_labels.to_csv(output_dir / f"{prefix}_gene_labels_type.csv", index=False)
+        np.savez_compressed(output_dir / f"{prefix}_peak_overlap_matrix_type.npz", peak_matrix=peak_matrix)
+        peak_info.to_csv(output_dir / f"{prefix}_peak_info_type.csv", index=False)
+        logger.info(f"  Saved Phase 3 outputs to {output_dir} with prefix {prefix}")
 
     return results
 
+def run_phase3(
+    rna_adata: ad.AnnData,
+    atac_adata: ad.AnnData,
+    gene_annotations: pd.DataFrame,
+    genome_fasta: Path | str | None = None,
+    pwm_dict: dict[str, np.ndarray] | None = None,
+    motif_db: pd.DataFrame | None = None,
+    upstream_bp: int = DEFAULT_UPSTREAM_BP,
+    downstream_bp: int = DEFAULT_DOWNSTREAM_BP,
+    corr_threshold: float = DEFAULT_CORR_THRESHOLD,
+    motif_pvalue: float = DEFAULT_MOTIF_PVALUE,
+    gene_name_type: str = "symbol",
+    output_dir: Path | str | None = None,
+    prefix: str = "retinal",
+) -> dict:
+    logger.info(f"=== Phase 3: Gene-Peak-TF Relationships ({prefix}) ===")
+
+    # Check if we have cell-type specific HVGs
+    if 'cell_type_hvgs' in rna_adata.uns and 'cell_type' in rna_adata.obs:
+        cell_types = [ct for ct in rna_adata.uns['cell_type_hvgs'].keys() if ct != "union"]
+        all_results = {}
+        for ct in cell_types:
+            logger.info(f"--- Running Phase 3 specifically for cell type: {ct} ---")
+            ct_hvgs = list(rna_adata.uns['cell_type_hvgs'][ct])
+            ct_mask = rna_adata.obs['cell_type'] == ct
+            
+            # Subset adatas
+            rna_ct = rna_adata[ct_mask, ct_hvgs].copy()
+            atac_ct = atac_adata[ct_mask].copy()
+            ct_prefix = f"{prefix}_{ct}"
+            
+            res = _run_phase3_core(
+                rna_ct, atac_ct, gene_annotations, ct_hvgs,
+                genome_fasta, pwm_dict, motif_db,
+                upstream_bp, downstream_bp, corr_threshold,
+                motif_pvalue, gene_name_type, output_dir, ct_prefix
+            )
+            all_results[ct] = res
+        return all_results
+    else:
+        # Fallback to global run
+        hvg_names = rna_adata.var_names.tolist()
+        return _run_phase3_core(
+            rna_adata, atac_adata, gene_annotations, hvg_names,
+            genome_fasta, pwm_dict, motif_db,
+            upstream_bp, downstream_bp, corr_threshold,
+            motif_pvalue, gene_name_type, output_dir, prefix
+        )
 
 # =========================================================================
 #  Main
@@ -1015,8 +1002,8 @@ if __name__ == "__main__":
     #     del pbmc_rna, pbmc_atac
 
     # --- Retinal (unpaired, mouse mm10) ---
-    ret_rna_path = data_dir / "retinal_rna_sub.h5ad"
-    ret_atac_path = data_dir / "retinal_atac_sub.h5ad"
+    ret_rna_path = data_dir / "retinal_rna_sub_type.h5ad"
+    ret_atac_path = data_dir / "retinal_atac_sub_type.h5ad"
 
     if ret_rna_path.exists() and ret_atac_path.exists():
         logger.info("\n" + "=" * 60)

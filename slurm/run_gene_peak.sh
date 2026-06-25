@@ -1,11 +1,11 @@
 #!/bin/bash
-#SBATCH --job-name=gene-peak
-#SBATCH --output=slurm/out/%j_gene_peak.out
-#SBATCH --error=slurm/out/%j_gene_peak.out
+#SBATCH --job-name=gene-peak-type
+#SBATCH --output=slurm/out/%j_gene_peak_type.out
+#SBATCH --error=slurm/out/%j_gene_peak_type.out
 #SBATCH --time=04:00:00
 #SBATCH --partition=general
-#SBATCH --cpus-per-task=4
-#SBATCH --mem=64G
+#SBATCH --cpus-per-task=8
+#SBATCH --mem=128G
 
 # Phase 3: Gene-peak-TF relationships for all datasets.
 #
@@ -19,7 +19,7 @@
 # Also requires reference files: hg38.fa, mm10.fa, GTFs, JASPAR motifs.
 #
 # Usage:
-#   sbatch slurm/run_gene_peak.sh
+#   sbatch slurm/run_gene_peak_type.sh
 
 apptainer exec --writable-tmpfs --pwd /opt/app --containall \
   --bind src/:/opt/app/src/ \
@@ -27,4 +27,4 @@ apptainer exec --writable-tmpfs --pwd /opt/app --containall \
   --bind output/:/opt/app/output/ \
   --env PYTHONPATH=/opt/app/src \
   container_0-1-3.sif pixi run --manifest-path /opt/app/pixi.toml \
-  python -m screni.data.gene_peak_relations
+  python -m screni.data.gene_peak_relations_type

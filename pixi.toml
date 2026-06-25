@@ -23,7 +23,8 @@ inspect-seaad-integration = { cmd = "python scripts/inspect_seaad_integration.py
 check-seaad-atac-counts = { cmd = "python scripts/check_seaad_atac_counts.py", env = { PYTHONPATH = "src" } }
 gene-peak = { cmd = "python -m screni.data.gene_peak_relations", env = { PYTHONPATH = "src" } }
 test = { cmd = "pytest", env = { PYTHONPATH = "src" } }
-
+infer-wscreni = { cmd = "python -m screni.data.infer_wscreni", env= {PYTHONPATH = "src"} }
+compare-infer = { cmd ="python -m compare_with_r.py",env={PYTHONPATH="."}}
 [dependencies]
 ipykernel = "*"
 psutil = ">=5.9.8,<5.10.dev0"
