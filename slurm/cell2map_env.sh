@@ -6,6 +6,9 @@ REPO="${REPO:-$SLURM_SUBMIT_DIR}"
 SIF="${SIF:-/tudelft.net/staff-umbrella/ScReNI/bsc-screni/container_0-1-3.sif}"
 cd "$REPO" || exit 1
 export OMP_NUM_THREADS="${SLURM_CPUS_PER_TASK:-1}"
+# CPU-only jobs (prepare, merge) still use the CUDA environment; tell pixi
+# the CUDA virtual package exists so it does not refuse to run there.
+export CONDA_OVERRIDE_CUDA=12
 
 c2m() {
   apptainer exec --nv --bind /tudelft.net:/tudelft.net \
