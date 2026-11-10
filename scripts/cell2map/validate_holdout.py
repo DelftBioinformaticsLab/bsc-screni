@@ -87,7 +87,9 @@ def main() -> None:
     p.add_argument("--donor", required=True)
     p.add_argument("--inputs", type=Path, default=Path("data/cell2map"))
     p.add_argument("--out", type=Path, default=Path("output/cell2map/validation"))
-    p.add_argument("--methods", nargs="+", default=["cell2map", "tangram"])
+    p.add_argument("--methods", nargs="+", default=["cell2map", "tangram", "random"],
+                   choices=["cell2map", "tangram", "random"],
+                   help="random = baseline that picks a random reference cell of the subclass")
     p.add_argument("--scopes", nargs="+", default=["section", "donor"], choices=["section", "donor"])
     p.add_argument("--subclasses", nargs="*", default=None)
     p.add_argument("--holdout", type=float, default=0.05)
@@ -99,6 +101,8 @@ def main() -> None:
     args = p.parse_args()
     args.out.mkdir(parents=True, exist_ok=True)
     device = "cuda" if torch.cuda.is_available() else "cpu"
+    # held-out sets depend only on --seed and the subclass order, so runs with
+    # different --methods evaluate the same cells and can be compared
 
     mer = ad.read_h5ad(args.inputs / "merfish" / f"{args.donor}.h5ad")
     subclasses = args.subclasses or sorted(mer.obs[d.SUBCLASS].unique())

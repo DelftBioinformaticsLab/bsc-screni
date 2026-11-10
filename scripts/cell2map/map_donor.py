@@ -41,7 +41,7 @@ def parse_args() -> argparse.Namespace:
     g.add_argument("--donor-index", type=int, help="Line in <inputs>/donors.txt (0-based)")
     p.add_argument("--inputs", type=Path, default=Path("data/cell2map"))
     p.add_argument("--out", type=Path, default=Path("output/cell2map/maps"))
-    p.add_argument("--methods", nargs="+", default=["cell2map"], choices=["cell2map", "tangram"])
+    p.add_argument("--methods", nargs="+", default=["cell2map"], choices=["cell2map", "tangram", "random"])
     p.add_argument("--subclasses", nargs="*", default=None, help="Default: all 24")
     p.add_argument("--max-nuclei", type=int, default=None,
                    help="Subsample at most this many nuclei per subclass (pilot)")

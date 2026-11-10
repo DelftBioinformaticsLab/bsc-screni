@@ -188,6 +188,9 @@ def run_method(method: str, sc_a: ad.AnnData, sp_a: ad.AnnData, *, k_sp: int = 7
         M = run_cell2map(sc_a, sp_a, k_sp=k_sp, epochs=epochs, device=device)
     elif method == "tangram":
         M = run_tangram(sc_a, sp_a, epochs=epochs_tangram, seed=seed, device=device)
+    elif method == "random":
+        # baseline: each cell goes to a random MERFISH cell of its subclass
+        M = np.random.default_rng(seed).random((sc_a.n_obs, sp_a.n_obs), dtype=np.float32)
     else:
         raise ValueError(method)
     return M, time.time() - t0
