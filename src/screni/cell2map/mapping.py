@@ -5,8 +5,8 @@ submodule in external/Cell2Map) was written for multi-cell spots. Four
 adaptations make it run on single-cell MERFISH, all done here so the
 upstream code stays untouched:
 
-1. ``map_utils`` imports the unused ``Celloc`` package; a stub module is
-   registered before import. ``loss.py`` uses ``nn`` and ``F`` without
+1. ``map_utils`` and ``common`` import ``Celloc`` and ``datatable``, which
+   the mapping never calls; stub modules are registered before import. ``loss.py`` uses ``nn`` and ``F`` without
    importing them; they are provided while the package is imported.
 2. The spatial graph is hard-coded as a 5-unit radius graph. MERFISH
    coordinates are in micrometres and a subclass subset is sparse, so the
@@ -50,7 +50,8 @@ def _cell2map_modules():
     import torch.nn as nn
     import torch.nn.functional as F
 
-    sys.modules.setdefault("Celloc", types.ModuleType("Celloc"))
+    for unused in ("Celloc", "datatable"):  # imported upstream, never called here
+        sys.modules.setdefault(unused, types.ModuleType(unused))
     if str(CELL2MAP_DIR) not in sys.path:
         sys.path.insert(0, str(CELL2MAP_DIR))
     # Upstream loss.py uses nn and F without importing them; make them
