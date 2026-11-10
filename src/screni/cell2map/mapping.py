@@ -9,7 +9,8 @@ upstream code stays untouched:
    the mapping never calls; stub modules are registered before import. ``loss.py`` uses ``nn`` and ``F`` without
    importing them; they are provided while the package is imported.
    PyG's ``knn_graph`` needs the compiled ``pyg-lib``; a scikit-learn
-   version with the same output replaces it.
+   version with the same output replaces it. A singular covariance in the
+   Mahalanobis loss term falls back to the pseudo-inverse.
 2. The spatial graph is hard-coded as a 5-unit radius graph. MERFISH
    coordinates are in micrometres and a subclass subset is sparse, so the
    spatial graph is replaced by a k-nearest-neighbour graph (default k=7)
@@ -161,7 +162,24 @@ def run_cell2map(sc_a: ad.AnnData, sp_a: ad.AnnData, *, k_sc: int = 7,
     mapper = mo.Mapper(S=S, G=G, d=d, a=a, b=b, D=D, device=device,
                        lambda_d=0.8, lambda_g1=1.5, lambda_g2=0.8, alpha=2,
                        lambda_mahalanobis=0.7, lambda_distance=0.01)
-    return np.asarray(mapper.train(num_epochs=epochs, learning_rate=lr, print_each=None))
+    # Upstream inverts the embedding covariance with torch.inverse, which fails
+    # when it is singular (a handful of cells, e.g. small hold-out sets); fall
+    # back to the pseudo-inverse in that case only.
+    import torch
+
+    original_inverse = torch.inverse
+
+    def safe_inverse(A, *a, **kw):
+        try:
+            return original_inverse(A, *a, **kw)
+        except torch._C._LinAlgError:
+            return torch.linalg.pinv(A)
+
+    torch.inverse = safe_inverse
+    try:
+        return np.asarray(mapper.train(num_epochs=epochs, learning_rate=lr, print_each=None))
+    finally:
+        torch.inverse = original_inverse
 
 
 def run_tangram(sc_a: ad.AnnData, sp_a: ad.AnnData, *, epochs: int = 1000,
