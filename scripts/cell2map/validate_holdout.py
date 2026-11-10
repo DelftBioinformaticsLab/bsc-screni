@@ -61,7 +61,8 @@ def evaluate(method: str, query: ad.AnnData, ref: ad.AnnData, args, device: str)
     hit = out["mapped_section"].to_numpy() == true_sec
     err = np.linalg.norm(out[["x", "y"]].to_numpy() - true_xy, axis=1)
     return pd.DataFrame({"true_section": true_sec, "section_correct": hit,
-                         "error_um": np.where(hit, err, np.nan), "seconds_total": secs},
+                         "error_um": np.where(hit, err, np.nan), "seconds_total": secs,
+                         "n_ref": ref.n_obs},
                         index=q.obs_names)
 
 
@@ -134,6 +135,7 @@ def main() -> None:
     summary.to_csv(args.out / f"{args.donor}_summary.csv", index=False)
     with pd.option_context("display.width", 160, "display.max_rows", 20):
         print(summary[summary["subclass"] == "ALL"].round(1).to_string(index=False))
+    print("Cell2Map covariance-inverse fallbacks (epochs):", mp.INVERSE_FALLBACKS)
 
 
 if __name__ == "__main__":

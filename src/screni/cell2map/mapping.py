@@ -10,7 +10,8 @@ upstream code stays untouched:
    importing them; they are provided while the package is imported.
    PyG's ``knn_graph`` needs the compiled ``pyg-lib``; a scikit-learn
    version with the same output replaces it. A singular covariance in the
-   Mahalanobis loss term falls back to the pseudo-inverse.
+   Mahalanobis loss term falls back to a ridge-regularised inverse, then to
+   the identity; ``INVERSE_FALLBACKS`` counts how often.
 2. The spatial graph is hard-coded as a 5-unit radius graph. MERFISH
    coordinates are in micrometres and a subclass subset is sparse, so the
    spatial graph is replaced by a k-nearest-neighbour graph (default k=7)
@@ -45,6 +46,7 @@ logger = logging.getLogger(__name__)
 REPO = Path(__file__).resolve().parents[3]
 CELL2MAP_DIR = REPO / "external" / "Cell2Map"
 SECTION_GAP_UM = 10_000.0
+INVERSE_FALLBACKS = {"ridge": 0, "identity": 0}  # epochs that needed a fallback
 
 
 def _cell2map_modules():
@@ -163,8 +165,9 @@ def run_cell2map(sc_a: ad.AnnData, sp_a: ad.AnnData, *, k_sc: int = 7,
                        lambda_d=0.8, lambda_g1=1.5, lambda_g2=0.8, alpha=2,
                        lambda_mahalanobis=0.7, lambda_distance=0.01)
     # Upstream inverts the embedding covariance with torch.inverse, which fails
-    # when it is singular (a handful of cells, e.g. small hold-out sets); fall
-    # back to the pseudo-inverse in that case only.
+    # when it is singular (a handful of cells, e.g. small hold-out sets).
+    # Fallbacks: ridge-regularised inverse, then identity (the Mahalanobis term
+    # becomes Euclidean). Counted in INVERSE_FALLBACKS.
     import torch
 
     original_inverse = torch.inverse
@@ -173,7 +176,17 @@ def run_cell2map(sc_a: ad.AnnData, sp_a: ad.AnnData, *, k_sc: int = 7,
         try:
             return original_inverse(A, *a, **kw)
         except torch._C._LinAlgError:
-            return torch.linalg.pinv(A)
+            pass
+        eye = torch.eye(A.shape[0], device=A.device, dtype=A.dtype)
+        if torch.isfinite(A).all():
+            try:
+                ridge = 1e-3 * (torch.trace(A).abs() / A.shape[0] + 1e-6)
+                INVERSE_FALLBACKS["ridge"] += 1
+                return original_inverse(A + ridge * eye)
+            except torch._C._LinAlgError:
+                pass
+        INVERSE_FALLBACKS["identity"] += 1
+        return eye
 
     torch.inverse = safe_inverse
     try:
