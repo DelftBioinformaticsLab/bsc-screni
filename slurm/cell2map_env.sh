@@ -20,4 +20,4 @@ c2m() {
     "$SIF" "$PIXI" run --frozen -e cell2map --manifest-path "$REPO/pixi.toml" "$@"
 }
 
-echo "Job $SLURM_JOB_ID on $(hostname), start $(date), repo $REPO @ $(git -C "$REPO" rev-parse --short HEAD)"
+echo "Job $SLURM_JOB_ID on $(hostname), start $(date), repo $REPO @ $(cd "$REPO" && git rev-parse --short HEAD)"

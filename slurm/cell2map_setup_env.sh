@@ -25,11 +25,4 @@ CONDA_OVERRIDE_CUDA=12 apptainer exec --bind /tudelft.net:/tudelft.net "$SIF" \
   "$PIXI" install -e cell2map --manifest-path "$REPO/pixi.toml" || exit 1
 source slurm/cell2map_env.sh
 nvidia-smi --query-gpu=name,memory.total,driver_version --format=csv
-c2m python -c "
-import torch, torch_geometric, tangram, scanpy
-from screni.cell2map import mapping as mp
-mp._cell2map_modules()
-print('torch', torch.__version__, 'cuda', torch.cuda.is_available(), torch.cuda.get_device_name(0) if torch.cuda.is_available() else '')
-print('pyg', torch_geometric.__version__, 'tangram', getattr(tangram, '__version__', '?'), 'scanpy', scanpy.__version__)
-print('Cell2Map import OK')
-"
+c2m python scripts/cell2map/check_env.py
