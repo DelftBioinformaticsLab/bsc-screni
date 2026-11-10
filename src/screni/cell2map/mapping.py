@@ -8,6 +8,8 @@ upstream code stays untouched:
 1. ``map_utils`` and ``common`` import ``Celloc`` and ``datatable``, which
    the mapping never calls; stub modules are registered before import. ``loss.py`` uses ``nn`` and ``F`` without
    importing them; they are provided while the package is imported.
+   PyG's ``knn_graph`` needs the compiled ``pyg-lib``; a scikit-learn
+   version with the same output replaces it.
 2. The spatial graph is hard-coded as a 5-unit radius graph. MERFISH
    coordinates are in micrometres and a subclass subset is sparse, so the
    spatial graph is replaced by a k-nearest-neighbour graph (default k=7)
@@ -65,7 +67,27 @@ def _cell2map_modules():
     finally:
         for k in added:
             delattr(builtins, k)
+    au.knn_graph = _knn_graph
     return au, mo, ut
+
+
+def _knn_graph(x, k: int, loop: bool = False, flow: str = "source_to_target", **_):
+    """Drop-in for torch_geometric's knn_graph, which needs the compiled
+    pyg-lib package. Same edge_index layout, computed with scikit-learn."""
+    import torch
+    from sklearn.neighbors import NearestNeighbors
+
+    X = x.detach().cpu().numpy() if hasattr(x, "detach") else np.asarray(x)
+    n = len(X)
+    kk = min(n, k + (0 if loop else 1))
+    idx = NearestNeighbors(n_neighbors=kk).fit(X).kneighbors(X, return_distance=False)
+    centre = np.repeat(np.arange(n), kk)
+    nbr = idx.ravel()
+    if not loop:
+        keep = centre != nbr
+        centre, nbr = centre[keep], nbr[keep]
+    edge = (centre, nbr) if flow == "target_to_source" else (nbr, centre)
+    return torch.as_tensor(np.vstack(edge), dtype=torch.long)
 
 
 def stack_sections(sp_a: ad.AnnData, section_col: str = "Section") -> ad.AnnData:
