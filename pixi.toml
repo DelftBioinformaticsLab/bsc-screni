@@ -71,7 +71,7 @@ platforms = ["linux-64"]
 system-requirements = { cuda = "12" }
 
 [feature.cell2map.dependencies]
-python = "3.12.*"
+python = "3.11.*"           # same as the default env (scikit-misc <0.2 has no 3.12 build)
 pytorch-gpu = ">=2.4"
 pytorch_geometric = ">=2.5"
 
