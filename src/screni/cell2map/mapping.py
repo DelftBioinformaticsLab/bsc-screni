@@ -1,12 +1,13 @@
 """Run Cell2Map or Tangram for one (donor, subclass) and read out positions.
 
 Cell2Map (https://github.com/shaoqiangzhang/Cell2Map, vendored as a git
-submodule in external/Cell2Map) was written for multi-cell spots. Three
+submodule in external/Cell2Map) was written for multi-cell spots. Four
 adaptations make it run on single-cell MERFISH, all done here so the
 upstream code stays untouched:
 
 1. ``map_utils`` imports the unused ``Celloc`` package; a stub module is
-   registered before import.
+   registered before import. ``loss.py`` uses ``nn`` and ``F`` without
+   importing them; they are provided while the package is imported.
 2. The spatial graph is hard-coded as a 5-unit radius graph. MERFISH
    coordinates are in micrometres and a subclass subset is sparse, so the
    spatial graph is replaced by a k-nearest-neighbour graph (default k=7)
@@ -44,12 +45,25 @@ SECTION_GAP_UM = 10_000.0
 
 
 def _cell2map_modules():
+    import builtins
+
+    import torch.nn as nn
+    import torch.nn.functional as F
+
     sys.modules.setdefault("Celloc", types.ModuleType("Celloc"))
     if str(CELL2MAP_DIR) not in sys.path:
         sys.path.insert(0, str(CELL2MAP_DIR))
-    from Cell2Map import autoencoder as au
-    from Cell2Map import map_optimizer as mo
-    from Cell2Map import utils as ut
+    # Upstream loss.py uses nn and F without importing them; make them
+    # visible only while the package is imported.
+    added = [k for k in ("nn", "F") if not hasattr(builtins, k)]
+    builtins.nn, builtins.F = nn, F
+    try:
+        from Cell2Map import autoencoder as au
+        from Cell2Map import map_optimizer as mo
+        from Cell2Map import utils as ut
+    finally:
+        for k in added:
+            delattr(builtins, k)
     return au, mo, ut
 
 
