@@ -14,10 +14,11 @@
 # Run once (and again after pixi.toml changes): sbatch slurm/cell2map_setup_env.sh
 REPO="${REPO:-$SLURM_SUBMIT_DIR}"
 SIF="${SIF:-/tudelft.net/staff-umbrella/ScReNI/bsc-screni/container_0-1-3.sif}"
+PIXI="${PIXI:-$HOME/.pixi/bin/pixi}"
 cd "$REPO" || exit 1
 git submodule update --init external/Cell2Map
-apptainer exec --bind /tudelft.net:/tudelft.net "$SIF" \
-  pixi install -e cell2map --manifest-path "$REPO/pixi.toml" || exit 1
+CONDA_OVERRIDE_CUDA=12 apptainer exec --bind /tudelft.net:/tudelft.net "$SIF" \
+  "$PIXI" install -e cell2map --manifest-path "$REPO/pixi.toml" || exit 1
 source slurm/cell2map_env.sh
 nvidia-smi --query-gpu=name,memory.total,driver_version --format=csv
 c2m python -c "
