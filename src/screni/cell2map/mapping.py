@@ -157,13 +157,15 @@ def run_tangram(sc_a: ad.AnnData, sp_a: ad.AnnData, *, epochs: int = 1000,
     return M.toarray() if sp.issparse(M) else np.asarray(M)
 
 
-def run_method(method: str, sc_a: ad.AnnData, sp_a: ad.AnnData, **kw) -> tuple[np.ndarray, float]:
+def run_method(method: str, sc_a: ad.AnnData, sp_a: ad.AnnData, *, k_sp: int = 7,
+               epochs: int = 1500, epochs_tangram: int = 1000, seed: int = 42,
+               device: str = "cuda") -> tuple[np.ndarray, float]:
+    """Run one method; ``epochs`` is Cell2Map's, ``epochs_tangram`` Tangram's."""
     t0 = time.time()
     if method == "cell2map":
-        M = run_cell2map(sc_a, sp_a, **{k: v for k, v in kw.items() if k != "seed"})
+        M = run_cell2map(sc_a, sp_a, k_sp=k_sp, epochs=epochs, device=device)
     elif method == "tangram":
-        M = run_tangram(sc_a, sp_a, epochs=kw.get("epochs_tangram", 1000),
-                        seed=kw.get("seed", 42), device=kw.get("device", "cuda"))
+        M = run_tangram(sc_a, sp_a, epochs=epochs_tangram, seed=seed, device=device)
     else:
         raise ValueError(method)
     return M, time.time() - t0
