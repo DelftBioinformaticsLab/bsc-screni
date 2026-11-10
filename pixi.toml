@@ -71,12 +71,20 @@ platforms = ["linux-64"]
 system-requirements = { cuda = "12" }
 
 [feature.cell2map.dependencies]
-python = "3.11.*"           # same as the default env (scikit-misc <0.2 has no 3.12 build)
+python = "3.11.*"
 pytorch-gpu = ">=2.4"
 pytorch_geometric = ">=2.5"
+anndata = ">=0.11.4,<0.12"
+scanpy = ">=1.11.2,<2"
+pandas = ">=2.2.3,<3"
+h5py = "*"
+scikit-learn = ">=1.3.0"
+tqdm = "*"
 
 [feature.cell2map.pypi-dependencies]
 tangram-sc = ">=1.0.4"
 
 [environments]
-cell2map = { features = ["cell2map"], solve-group = "cell2map" }
+# standalone: the default feature's pypi tools (awscli, synapseclient) do not
+# solve next to the CUDA stack and are not needed for mapping
+cell2map = { features = ["cell2map"], no-default-feature = true, solve-group = "cell2map" }
