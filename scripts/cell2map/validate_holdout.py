@@ -94,8 +94,8 @@ def summarise(cells: pd.DataFrame) -> pd.DataFrame:
             "pearson_x": rx, "pearson_y": ry,
             "r2_x": rx ** 2, "r2_y": ry ** 2,
         })
-    by_sub = cells.groupby(["method", "scope", "subclass"]).apply(f).reset_index()
-    overall = cells.groupby(["method", "scope"]).apply(f).reset_index()
+    by_sub = cells.groupby(["method", "scope", "subclass"])[cells.columns.drop(["method", "scope", "subclass"]).tolist()].apply(f).reset_index()
+    overall = cells.groupby(["method", "scope"])[cells.columns.drop(["method", "scope"]).tolist()].apply(f).reset_index()
     overall["subclass"] = "ALL"
     return pd.concat([overall, by_sub], ignore_index=True)
 
