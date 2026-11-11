@@ -109,7 +109,34 @@ def load_merfish(path: Path = MERFISH_PATH, donors: list[str] | None = None) -> 
     a.obsm["spatial"] = coords.astype(np.float64)
     for col in (DONOR, SUBCLASS, SECTION):
         a.obs[col] = a.obs[col].astype(str)
-    return a
+    return drop_duplicate_cells(a)
+
+
+def drop_duplicate_cells(a: ad.AnnData) -> ad.AnnData:
+    """Drop the second copy of MERFISH cells that are stored twice.
+
+    In the 2024-12-11 file, every cell of 8 sections (donors H20.33.015,
+    H21.33.031 and 2 of 3 sections of H21.33.040; 469,474 cells) appears twice:
+    same donor and coordinates, expression correlation ~0.91 within a pair
+    (0.08 for random pairs), 90% the same subclass. One copy has whole-number
+    'Genes detected' and a Merscope ID like every other cell in the file; the
+    other has fractional 'Genes detected' and no Merscope ID. Checked on
+    2026-11-11. Left in, the twin of a held-out cell stays in the reference
+    and the hold-out validation reports 0 µm errors.
+
+    Keeps, per (donor, x, y), the whole-number copy (else the first).
+    """
+    xy = np.asarray(a.obsm["spatial"])
+    key = pd.DataFrame({"donor": a.obs[DONOR].to_numpy(), "x": xy[:, 0], "y": xy[:, 1]})
+    gd = a.obs["Genes detected"].to_numpy(dtype=float)
+    key["frac"] = ~np.isclose(gd, np.round(gd))
+    key["i"] = np.arange(len(key))
+    keep = key.sort_values(["frac", "i"]).drop_duplicates(["donor", "x", "y"])["i"]
+    keep = np.sort(keep.to_numpy())
+    n_drop = a.n_obs - len(keep)
+    if n_drop:
+        logger.info("Dropped %d duplicate MERFISH cells (same donor and coordinates)", n_drop)
+    return a[keep].copy() if n_drop else a
 
 
 def check_merfish_scale(a: ad.AnnData) -> str:
