@@ -10,8 +10,10 @@
 #SBATCH --gres=gpu:1
 
 # 5% MERFISH hold-out validation, Cell2Map vs Tangram vs random, section and donor
-# scope. Default donor: the pilot donor. Override: DONOR=H21.33.019 sbatch ...
+# scope. Default donor: the pilot donor. Overrides via environment, e.g.
+#   DONOR=H21.33.019 MATCH=none METHODS="cell2map nearest" OUT=output/x sbatch ...
 source slurm/cell2map_env.sh
 DONOR="${DONOR:-$(cat data/cell2map/pilot_donor.txt)}"
 c2m python -u scripts/cell2map/validate_holdout.py --donor "$DONOR" \
-  --methods cell2map tangram random --out output/cell2map/validation
+  --methods ${METHODS:-cell2map tangram random} --match "${MATCH:-subclass}" \
+  --out "${OUT:-output/cell2map/validation}"

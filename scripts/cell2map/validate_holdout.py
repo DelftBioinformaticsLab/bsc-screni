@@ -37,6 +37,7 @@ from screni.cell2map import mapping as mp
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(message)s")
 logger = logging.getLogger(__name__)
+DEPTH = "Depth from pia"
 
 
 def split(obs: pd.DataFrame, frac: float, rng: np.random.Generator) -> np.ndarray:
@@ -57,11 +58,20 @@ def evaluate(method: str, query: ad.AnnData, ref: ad.AnnData, args, device: str)
     ref = mp.stack_sections(ref)
     M, secs = mp.run_method(method, q, ref, k_sp=args.k_sp, epochs=args.epochs_cell2map,
                             epochs_tangram=args.epochs_tangram, seed=args.seed, device=device)
-    out = mp.readout(M, q, ref, [d.SECTION])
+    out = mp.readout(M, q, ref, [d.SECTION, d.SUBCLASS, DEPTH])
     hit = out["mapped_section"].to_numpy() == true_sec
     err = np.linalg.norm(out[["x", "y"]].to_numpy() - true_xy, axis=1)
+    # depth part of the error (distance from pia, µm) and the rest, which runs
+    # along the cortical sheet: err^2 = depth^2 + along^2 (approximately)
+    derr = np.abs(out["mapped_" + DEPTH.lower().replace(" ", "_")].to_numpy(float)
+                  - q.obs[DEPTH].to_numpy(float))
+    along = np.sqrt(np.clip(err ** 2 - derr ** 2, 0, None))
     return pd.DataFrame({"true_section": true_sec, "section_correct": hit,
-                         "error_um": np.where(hit, err, np.nan), "seconds_total": secs,
+                         "error_um": np.where(hit, err, np.nan),
+                         "depth_error_um": np.where(hit, derr, np.nan),
+                         "along_error_um": np.where(hit, along, np.nan),
+                         "subclass_correct": out["mapped_subclass"].to_numpy() == q.obs[d.SUBCLASS].to_numpy(),
+                         "seconds_total": secs,
                          "true_x": true_xy[:, 0], "true_y": true_xy[:, 1],
                          "mapped_x": out["x"].to_numpy(), "mapped_y": out["y"].to_numpy(),
                          "n_ref": ref.n_obs},
@@ -91,6 +101,9 @@ def summarise(cells: pd.DataFrame) -> pd.DataFrame:
             "mean_um": e.mean(),
             "within_500_pct": 100 * (e <= 500).mean(),
             "within_1000_pct": 100 * (e <= 1000).mean(),
+            "median_depth_um": g["depth_error_um"].median() if "depth_error_um" in g else np.nan,
+            "median_along_um": g["along_error_um"].median() if "along_error_um" in g else np.nan,
+            "subclass_acc_pct": 100 * g["subclass_correct"].mean() if "subclass_correct" in g else np.nan,
             "pearson_x": rx, "pearson_y": ry,
             "r2_x": rx ** 2, "r2_y": ry ** 2,
         })
@@ -108,8 +121,12 @@ def main() -> None:
     p.add_argument("--inputs", type=Path, default=Path("data/cell2map"))
     p.add_argument("--out", type=Path, default=Path("output/cell2map/validation"))
     p.add_argument("--methods", nargs="+", default=["cell2map", "tangram", "random"],
-                   choices=["cell2map", "tangram", "random"],
-                   help="random = baseline that picks a random reference cell of the subclass")
+                   choices=["cell2map", "tangram", "random", "nearest"],
+                   help="random = a random reference cell; nearest = the reference cell "
+                        "with the most correlated expression (no optimisation)")
+    p.add_argument("--match", choices=["subclass", "none"], default="subclass",
+                   help="subclass: map each subclass onto its own cells (the real setup); "
+                        "none: map all cell types together (as in the Cell2Map benchmarks)")
     p.add_argument("--scopes", nargs="+", default=["section", "donor"], choices=["section", "donor"])
     p.add_argument("--subclasses", nargs="*", default=None)
     p.add_argument("--holdout", type=float, default=0.05)
@@ -126,11 +143,15 @@ def main() -> None:
     # different --methods evaluate the same cells and can be compared
 
     mer = ad.read_h5ad(args.inputs / "merfish" / f"{args.donor}.h5ad")
-    subclasses = args.subclasses or sorted(mer.obs[d.SUBCLASS].unique())
+    group_col = d.SUBCLASS
+    if args.match == "none":
+        mer.obs["_group"] = "all types"
+        group_col = "_group"
+    subclasses = args.subclasses or sorted(mer.obs[group_col].unique())
     rng = np.random.default_rng(args.seed)
     frames = []
     for sub in subclasses:
-        m = mer[mer.obs[d.SUBCLASS] == sub].copy()
+        m = mer[mer.obs[group_col] == sub].copy()
         if m.n_obs < args.min_cells:
             continue
         held = split(m.obs, args.holdout, rng)

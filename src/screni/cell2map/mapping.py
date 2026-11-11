@@ -219,6 +219,15 @@ def run_method(method: str, sc_a: ad.AnnData, sp_a: ad.AnnData, *, k_sp: int = 7
         M = run_cell2map(sc_a, sp_a, k_sp=k_sp, epochs=epochs, device=device)
     elif method == "tangram":
         M = run_tangram(sc_a, sp_a, epochs=epochs_tangram, seed=seed, device=device)
+    elif method == "nearest":
+        # no optimisation: each cell goes to the reference cell with the most
+        # correlated log-CPM profile over the shared genes (expression ceiling check)
+        q, r = preprocess(sc_a, sp_a)
+        A = np.asarray(q.X.toarray() if hasattr(q.X, "toarray") else q.X, dtype=np.float32)
+        B = np.asarray(r.X.toarray() if hasattr(r.X, "toarray") else r.X, dtype=np.float32)
+        A = (A - A.mean(1, keepdims=True)); A /= np.linalg.norm(A, axis=1, keepdims=True) + 1e-12
+        B = (B - B.mean(1, keepdims=True)); B /= np.linalg.norm(B, axis=1, keepdims=True) + 1e-12
+        M = A @ B.T
     elif method == "random":
         # baseline: each cell goes to a random MERFISH cell of its subclass
         M = np.random.default_rng(seed).random((sc_a.n_obs, sp_a.n_obs), dtype=np.float32)
