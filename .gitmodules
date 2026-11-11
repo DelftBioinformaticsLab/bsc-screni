@@ -1,0 +1,3 @@
+[submodule "external/Cell2Map"]
+	path = external/Cell2Map
+	url = https://github.com/shaoqiangzhang/Cell2Map.git
