@@ -62,13 +62,28 @@ def evaluate(method: str, query: ad.AnnData, ref: ad.AnnData, args, device: str)
     err = np.linalg.norm(out[["x", "y"]].to_numpy() - true_xy, axis=1)
     return pd.DataFrame({"true_section": true_sec, "section_correct": hit,
                          "error_um": np.where(hit, err, np.nan), "seconds_total": secs,
+                         "true_x": true_xy[:, 0], "true_y": true_xy[:, 1],
+                         "mapped_x": out["x"].to_numpy(), "mapped_y": out["y"].to_numpy(),
                          "n_ref": ref.n_obs},
                         index=q.obs_names)
+
+
+def _pearson_within_section(g: pd.DataFrame, axis: str) -> float:
+    """Pearson r between true and mapped coordinate, after centring both on the
+    true section's mean, over cells mapped to the right section. Centring keeps
+    the section offsets from inflating r."""
+    h = g[g["section_correct"]]
+    if len(h) < 3:
+        return np.nan
+    mu = h.groupby("true_section")[f"true_{axis}"].transform("mean")
+    t, m = h[f"true_{axis}"] - mu, h[f"mapped_{axis}"] - mu
+    return float(np.corrcoef(t, m)[0, 1]) if t.std() > 0 and m.std() > 0 else np.nan
 
 
 def summarise(cells: pd.DataFrame) -> pd.DataFrame:
     def f(g):
         e = g["error_um"].dropna()
+        rx, ry = _pearson_within_section(g, "x"), _pearson_within_section(g, "y")
         return pd.Series({
             "n_cells": len(g),
             "section_acc_pct": 100 * g["section_correct"].mean(),
@@ -76,6 +91,8 @@ def summarise(cells: pd.DataFrame) -> pd.DataFrame:
             "mean_um": e.mean(),
             "within_500_pct": 100 * (e <= 500).mean(),
             "within_1000_pct": 100 * (e <= 1000).mean(),
+            "pearson_x": rx, "pearson_y": ry,
+            "r2_x": rx ** 2, "r2_y": ry ** 2,
         })
     by_sub = cells.groupby(["method", "scope", "subclass"]).apply(f).reset_index()
     overall = cells.groupby(["method", "scope"]).apply(f).reset_index()
@@ -85,7 +102,9 @@ def summarise(cells: pd.DataFrame) -> pd.DataFrame:
 
 def main() -> None:
     p = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    p.add_argument("--donor", required=True)
+    g = p.add_mutually_exclusive_group(required=True)
+    g.add_argument("--donor")
+    g.add_argument("--donor-index", type=int, help="Line in <inputs>/donors.txt (0-based)")
     p.add_argument("--inputs", type=Path, default=Path("data/cell2map"))
     p.add_argument("--out", type=Path, default=Path("output/cell2map/validation"))
     p.add_argument("--methods", nargs="+", default=["cell2map", "tangram", "random"],
@@ -100,6 +119,7 @@ def main() -> None:
     p.add_argument("--epochs-tangram", type=int, default=1000)
     p.add_argument("--k-sp", type=int, default=7)
     args = p.parse_args()
+    args.donor = args.donor or (args.inputs / "donors.txt").read_text().split()[args.donor_index]
     args.out.mkdir(parents=True, exist_ok=True)
     device = "cuda" if torch.cuda.is_available() else "cpu"
     # held-out sets depend only on --seed and the subclass order, so runs with
