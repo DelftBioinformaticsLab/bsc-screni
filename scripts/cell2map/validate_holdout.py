@@ -101,6 +101,10 @@ def summarise(cells: pd.DataFrame) -> pd.DataFrame:
             "mean_um": e.mean(),
             "within_500_pct": 100 * (e <= 500).mean(),
             "within_1000_pct": 100 * (e <= 1000).mean(),
+            # depth split: only cells with a depth annotation (~30%, one strip per section)
+            "n_depth": int(g["depth_error_um"].notna().sum()) if "depth_error_um" in g else 0,
+            "median_um_depth_cells": g.loc[g["depth_error_um"].notna(), "error_um"].median()
+            if "depth_error_um" in g else np.nan,
             "median_depth_um": g["depth_error_um"].median() if "depth_error_um" in g else np.nan,
             "median_along_um": g["along_error_um"].median() if "along_error_um" in g else np.nan,
             "subclass_acc_pct": 100 * g["subclass_correct"].mean() if "subclass_correct" in g else np.nan,
