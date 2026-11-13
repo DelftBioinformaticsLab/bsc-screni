@@ -109,9 +109,20 @@ def main() -> None:
 
     _, meta, genes, tfs = c.load(args.data)
     counts = pd.read_csv(args.data / "raw_count.csv", index_col=0)
-    counts.columns = counts.columns.astype(str)
-    counts = counts.loc[meta.index, genes]
+    # raw_count.csv's gene names are broken in the published data (101
+    # missing, 105 twice, last six named gene105..gene110). SVGRN's own
+    # CeSpGRN script reads it by position, so do the same, after checking the
+    # columns line up with the expression SVGRN uses.
+    if counts.shape[1] != len(genes):
+        raise SystemExit(f"raw_count.csv has {counts.shape[1]} genes, expected {len(genes)}")
+    counts.columns = genes
+    counts = counts.loc[meta.index]
     X = preprocess(counts.to_numpy(float))
+    expr, _, _, _ = c.load(args.data)
+    r = [np.corrcoef(X[:, j], expr.loc[meta.index].iloc[:, j])[0, 1] for j in range(len(genes))]
+    print(f"raw vs SVGRN-input expression, per-gene correlation: median {np.nanmedian(r):.3f}, min {np.nanmin(r):.3f}")
+    if np.nanmedian(r) < 0.5:
+        raise SystemExit("raw_count.csv columns do not line up with the expression file")
     xy = meta[["x", "y"]].to_numpy(float)
     targets = args.targets.read_text().split()
     rows = meta.index.get_indexer(targets)

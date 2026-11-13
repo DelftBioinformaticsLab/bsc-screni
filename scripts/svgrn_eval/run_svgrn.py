@@ -120,8 +120,9 @@ def main() -> None:
         non_celltype_GRN_model(_opt(n_epochs=args.epochs, data_file=str(data_csv), tf_list=str(tf_file),
                                     save_name=str(stage1_dir))).train_model()
         print(f"stage 1: {time.time() - t0:.0f} s", flush=True)
-    s1 = _rn_to_sender_receiver(stage1_dir / f"RN_{args.epochs}.csv")
-    c.save_preds(out / "preds_stage1.npz", {t: s1 for t in targets})
+    if args.variant != "shuffle_pos":  # same stage 1 as published
+        s1 = _rn_to_sender_receiver(stage1_dir / f"RN_{args.epochs}.csv")
+        c.save_preds(out / "preds_stage1.npz", {t: s1 for t in targets})
 
     # stage 2, one fine-tune per target cell
     preds, times = {}, []
@@ -129,6 +130,7 @@ def main() -> None:
         cell_dir = out / "cells" / cell
         rn = cell_dir / f"RN_{args.epochs}.csv"
         if not rn.exists():
+            cell_dir.mkdir(parents=True, exist_ok=True)  # SVGRN only creates the last level
             t0 = time.time()
             SC_GRN_model(_opt(n_epochs=args.epochs, data_file=str(data_csv), model_file=str(stage1_dir / "stage1.pt"),
                               target_cell_name=cell, save_name=str(cell_dir))).train_model()
