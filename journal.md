@@ -75,6 +75,6 @@ SVGRN reaches 7% above random (paper: 12% for this setting). The same model on s
 
 ### 2026-11-13 · kScReNI added
 
-**Finding.** ScReNI's kScReNI is RNA-only: for each cell, its 20 nearest neighbours on Seurat's SNN graph (expression PCA, not space), then GENIE3 (100 trees) on those 21 cells, input the raw counts. Run unmodified on all cells; the target cells are scored like the other methods. Results pending.
+**Finding.** ScReNI's kScReNI is RNA-only: for each cell, its 20 nearest neighbours on Seurat's SNN graph (expression PCA, not space), then GENIE3 (100 trees) on those 21 cells, input the raw counts. Run unmodified on all cells (2,000 cells in 1.1 min on 16 CPUs); the target cells are scored like the other methods. On g110_c2k_n01: AUPRC ratio 1.088 ± 0.088 (9% above random), AUROC 0.511, EPR 1.087. That is level with SVGRN (7%) within noise, with no spatial information and no GPU, and still below the no-network rule (11%).
 
 **How.** `external/ScReNI/R/Infer_kScReNI_scNetworks.R`; `scripts/svgrn_eval/run_kscreni.R`, `slurm/svgrn_02_kscreni.sh` (job 13034419 on g110_c2k_n01; jobs 13034429–13034461 on the regenerated datasets).

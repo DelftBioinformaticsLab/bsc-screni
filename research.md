@@ -12,6 +12,7 @@ Paper: Li et al., *Bioinformatics Advances* (2026), doi [10.1093/bioadv/vbag230]
 - **Shuffled RNA does as well.** With every gene shuffled across cells, which destroys all gene–gene structure, SVGRN reaches 11% above random.
 - **A rule with no network does as well.** Ranking every TF → gene edge by how highly the target gene is expressed reaches 11% above random. In this simulation, true targets are more highly expressed, and that is what SVGRN's margin reflects.
 - **Space adds nothing.** Stage 2 (the spatial, per-cell step) scores 7% above random against 8% for stage 1 alone, and shuffling the positions before stage 2 gives 8%.
+- **kScReNI does as well without space.** ScReNI's RNA-only variant reaches 9% above random, level with SVGRN.
 - **The baselines were weakened, but that does not change the picture.** CeSpGRN with the TF prior SVGRN also gets scores the same as without it (4% above random).
 
 ## How SVGRN works, in short
@@ -38,6 +39,7 @@ Fig. 3 of the paper: across 6 settings (110 or 160 genes × noise 0.1, 0.5, 1.0;
 |---|---|---|
 | target gene mean expression (no network) | 1.110 ± 0.111 | 11% |
 | SVGRN on shuffled RNA | 1.107 ± 0.100 | 11% |
+| kScReNI (expression neighbours + GENIE3, no space) | 1.088 ± 0.088 | 9% |
 | SVGRN stage 1 only | 1.084 ± 0.097 | 8% |
 | SVGRN, positions shuffled | 1.081 ± 0.095 | 8% |
 | **SVGRN as published** | **1.069 ± 0.090** | **7%** |
@@ -53,9 +55,9 @@ Mean ± SD over 30 target cells. Standard error of a mean ≈ 0.016, so differen
 
 SVGRN's own scMultiSim scripts and settings, seed 0. They do not reproduce SVGRN's files bit for bit (likely a different scMultiSim version), so they are new datasets with the paper's settings. Same evaluation as experiment 1.
 
-### 3. kScReNI on the same data · running
+### 3. kScReNI on the same data · done for g110_c2k_n01, running on the replicates
 
-ScReNI's RNA-only variant: 20 expression neighbours per cell, GENIE3 on those 21 cells, run unmodified.
+ScReNI's RNA-only variant: 20 expression neighbours per cell, GENIE3 on those 21 cells, run unmodified. On g110_c2k_n01 it reaches 9% above random (1.088 ± 0.088), level with SVGRN within noise, without positions or a GPU (2,000 cells in about a minute on 16 CPUs).
 
 ## Plan
 
