@@ -4,3 +4,6 @@
 [submodule "external/CeSpGRN"]
 	path = external/CeSpGRN
 	url = https://github.com/PeterZZQ/CeSpGRN.git
+[submodule "external/ScReNI"]
+	path = external/ScReNI
+	url = https://github.com/Xuxl2020/ScReNI.git
