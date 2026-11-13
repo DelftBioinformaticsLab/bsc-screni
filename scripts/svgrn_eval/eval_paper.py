@@ -38,6 +38,9 @@ def main() -> None:
     p.add_argument("--run", type=Path, required=True)
     p.add_argument("--targets", type=Path, required=True)
     p.add_argument("--epochs", type=int, default=150)
+    p.add_argument("--layout", choices=["ours", "svgrn"], default="ours",
+                   help="ours: <run>/cells/<cell>/RN_*.csv; svgrn: <run>/<cell>/RN_*.csv (their out_stage2)")
+    p.add_argument("--out-csv", type=Path, default=None, help="Default: <run>/paper_eval_cells.csv")
     args = p.parse_args()
 
     _, _, genes, tfs = c.load(args.data)
@@ -45,7 +48,7 @@ def main() -> None:
     mask = c.eval_mask(genes, tfs)
     rows = []
     for cell in args.targets.read_text().split():
-        f = args.run / "cells" / cell / f"RN_{args.epochs}.csv"
+        f = (args.run / "cells" if args.layout == "ours" else args.run) / cell / f"RN_{args.epochs}.csv"
         if not f.exists():
             rows.append({"cell": cell, "missing": True})
             continue
@@ -57,7 +60,7 @@ def main() -> None:
         rows.append({"cell": cell, "missing": False, "paper_epr": epr, "paper_auprc_ratio": auprc_ratio,
                      "paper_auroc": auroc, "abs_auprc_ratio": ours["auprc_ratio"], "abs_epr": ours["epr"]})
     df = pd.DataFrame(rows)
-    df.to_csv(args.run / "paper_eval_cells.csv", index=False)
+    df.to_csv(args.out_csv or args.run / "paper_eval_cells.csv", index=False)
     ok = df[~df["missing"]]
     print(f"{len(ok)} of {len(df)} cells scored ({int(df['missing'].sum())} missing)")
     for col in ["paper_epr", "paper_auprc_ratio", "paper_auroc", "abs_auprc_ratio", "abs_epr"]:
