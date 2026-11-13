@@ -116,3 +116,15 @@ Also: Fig. 3's CeSpGRN value for this setting is 1.0396; our CeSpGRN-as-they-ran
 **Finding.** On g110_c2k_n01, SVGRN's AUPRC ratio is the same whether edges are ranked by signed weight (as SVGRN's eval.py) or by |weight|: published stage 2 1.0690 both, stage 1 1.0842 both (its weights stay non-negative). Only CeSpGRN moves: 1.0421 signed vs 1.0395 on |weight| (the paper's Fig. 3 value is 1.0396). So the gap between our SVGRN (1.069) and the paper's (1.1245) is not the scoring. Candidates left: the stage-2 bandwidth (released script 6, supplement 4) and which cells were scored. The paper-faithful run tests both (W = 4, 300 cells, SVGRN's eval.py; array job 13034522).
 
 **How.** `output/svgrn_eval/g110_c2k_n01/scores_cells.csv`, signed ratio = auprc_signed / (n_true / 654). Raised by RAVEN, recomputed here.
+
+### 2026-11-13 · Paper-faithful run: 5% above random, Fig. 3 not reproduced
+
+**Finding.** SVGRN on its own g110_c2k_n01, run as the paper and supplement describe, as far as they specify: stage-2 bandwidth W = 4 (Supplementary Note 4), all other settings as Note 4 and the released scripts, the published stage-1 model, 300 target cells stratified by GRN cluster (seed 1), scored with SVGRN's own `eval.py` functions unchanged. AUPRC ratio 1.0496 (SD 0.0908, SE 0.0052) = 5% above random; EPR 1.0582 (SD 0.1732, SE 0.0100) = 6% above random; AUROC 0.5075. The paper reports 1.1245 and 1.1441: a gap of 14.3 SE on AUPRC ratio and 8.6 SE on EPR. Per GRN cluster: c0 1.068 (n = 181), c1 1.026 (25), c2 1.006 (56), c3 1.043 (38); no cluster averages near 1.12. The paper gives no seeds and does not say which cells it scored. Checked by RAVEN.
+
+**How.** `slurm/svgrn_03_paper.sh` (GPU array 13034522) and `slurm/svgrn_03_paper_cpu.sh` (CPU array 13034527, cancelled when all 300 cells existed), same settings; `scripts/svgrn_eval/eval_paper.py` → `output/svgrn_eval/g110_c2k_n01/paper_w4/paper_eval_cells.csv`.
+
+### 2026-11-13 · The simulation favours SVGRN's assumption
+
+**Finding.** In g110_c2k_n01, 83.1% of each cell's 6 nearest neighbours share its GRN cluster (42.1% expected by chance). Over 400 random cells, all pairs: true-edge Jaccard 0.245 for cells within distance 3 vs 0.133 further apart; 600 distinct edges, none shared by all cells. The data are RNA only and noise-free (`sim_true_counts`). So nearby cells regulate more alike, as SVGRN assumes, but most of each cell's network is its own, and stage 2 still does not improve on stage 1.
+
+**How.** `cell_loc_GRNcluster4.csv` (kNN on x, y), `cell_specific_GRN/` (nonzero entries); edge figures from RAVEN's all-pairs check (an earlier ad-hoc check of ours on the first 400 cells gave higher, biased values and was dropped).

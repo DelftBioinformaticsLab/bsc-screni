@@ -15,6 +15,8 @@ Paper: Li et al., *Bioinformatics Advances* (2026), doi [10.1093/bioadv/vbag230]
 - **kScReNI does as well without space.** ScReNI's RNA-only variant reaches 9% above random, level with SVGRN.
 - **The baselines were weakened, but that does not change the picture.** CeSpGRN with the TF prior SVGRN also gets scores the same as without it (4% above random).
 
+**Run as the paper describes, SVGRN is 5% above random, not 12%.** With the supplement's bandwidth (W = 4), all published settings, SVGRN's own scoring code and 300 cells, SVGRN reaches an AUPRC ratio of 1.050 (EPR 1.058) on its own g110_c2k_n01, against the paper's 1.1245 (1.1441): 14.3 and 8.6 standard errors short. Unknowns that could still explain the gap: run-to-run randomness (the code sets no seed), which cells the paper scored, and whether the released code and data are what produced Fig. 3.
+
 ## How SVGRN works, in short
 
 - **Input:** expression of every cell, its x, y position, and a list of TFs.
