@@ -81,6 +81,7 @@ def main() -> None:
     p.add_argument("--variant", choices=["published", "shuffle_rna", "shuffle_pos"], default="published")
     p.add_argument("--max-targets", type=int, default=None)
     p.add_argument("--seed", type=int, default=0)
+    p.add_argument("--epochs", type=int, default=150, help="Published: 150. Lower only for smoke tests")
     args = p.parse_args()
     _compat()
     from src.SVGRN_allcell import non_celltype_GRN_model  # noqa: E402
@@ -116,20 +117,20 @@ def main() -> None:
     else:
         stage1_dir = out / "stage1"
         t0 = time.time()
-        non_celltype_GRN_model(_opt(data_file=str(data_csv), tf_list=str(tf_file),
+        non_celltype_GRN_model(_opt(n_epochs=args.epochs, data_file=str(data_csv), tf_list=str(tf_file),
                                     save_name=str(stage1_dir))).train_model()
         print(f"stage 1: {time.time() - t0:.0f} s", flush=True)
-    s1 = _rn_to_sender_receiver(stage1_dir / "RN_150.csv")
+    s1 = _rn_to_sender_receiver(stage1_dir / f"RN_{args.epochs}.csv")
     c.save_preds(out / "preds_stage1.npz", {t: s1 for t in targets})
 
     # stage 2, one fine-tune per target cell
     preds, times = {}, []
     for i, cell in enumerate(targets):
         cell_dir = out / "cells" / cell
-        rn = cell_dir / "RN_150.csv"
+        rn = cell_dir / f"RN_{args.epochs}.csv"
         if not rn.exists():
             t0 = time.time()
-            SC_GRN_model(_opt(data_file=str(data_csv), model_file=str(stage1_dir / "stage1.pt"),
+            SC_GRN_model(_opt(n_epochs=args.epochs, data_file=str(data_csv), model_file=str(stage1_dir / "stage1.pt"),
                               target_cell_name=cell, save_name=str(cell_dir))).train_model()
             times.append(time.time() - t0)
             print(f"stage 2 {i + 1}/{len(targets)} {cell}: {times[-1]:.0f} s", flush=True)
