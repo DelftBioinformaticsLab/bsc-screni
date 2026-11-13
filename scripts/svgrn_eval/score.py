@@ -47,12 +47,19 @@ def main() -> None:
     summ.columns = [f"{m}_{s}" for m, s in summ.columns]
     summ.insert(0, "n_cells", cells.groupby("method").size())
     if REF in set(cells["method"]):
+        # paired over the same target cells: method - SVGRN published (stage 2)
         ref = cells[cells["method"] == REF].set_index("cell")["auprc_ratio"]
-        wins = {}
+        wins, diff, tval = {}, {}, {}
         for m, g in cells.groupby("method"):
-            v = g.set_index("cell")["auprc_ratio"].reindex(ref.index)
-            wins[m] = 100 * (v > ref).mean()
-        summ[f"pct_cells_beating_{REF.replace('/', '_')}"] = pd.Series(wins)
+            d = (g.set_index("cell")["auprc_ratio"].reindex(ref.index) - ref).dropna()
+            wins[m] = 100 * (d > 0).mean()
+            diff[m] = d.mean()
+            se = d.std(ddof=1) / len(d) ** 0.5 if len(d) > 1 else float("nan")
+            tval[m] = d.mean() / se if se and se > 0 else float("nan")
+        tag = REF.replace("/", "_")
+        summ[f"pct_cells_beating_{tag}"] = pd.Series(wins)
+        summ[f"paired_diff_vs_{tag}"] = pd.Series(diff)
+        summ[f"paired_t_vs_{tag}"] = pd.Series(tval)
     summ = summ.sort_values("auprc_ratio_mean", ascending=False)
     summ.to_csv(args.out / "scores_summary.csv")
     with pd.option_context("display.width", 200, "display.max_columns", 20):

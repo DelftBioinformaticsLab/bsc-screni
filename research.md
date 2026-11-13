@@ -6,11 +6,11 @@ Paper: Li et al., *Bioinformatics Advances* (2026), doi [10.1093/bioadv/vbag230]
 
 ## Main result so far
 
-**On SVGRN's own simulation, SVGRN is 7% above random, but the same score comes from things that are not regulation or space.** One dataset so far (g110_c2k_n01, 30 cells); replicates are running.
+**On SVGRN's own simulation, SVGRN is reliably 7% above random, but its final output does no better than simple controls, and its spatial step adds nothing.** One dataset so far (g110_c2k_n01, 30 cells); replicates are running. We do not reproduce the paper's number for this setting: 7% above random against the paper's 12% (1.069 vs 1.1245).
 
-- **Above random, as in the paper.** SVGRN reaches an AUPRC ratio of 1.069 (7% above random; the paper reports 12% for this setting). Low numbers are normal for GRN inference from expression alone, so this alone would be fine.
+- **Above random, but below the paper.** SVGRN reaches an AUPRC ratio of 1.069 (7% above random, paired over cells t = 3.1); the paper reports 1.1245 (12%) for this setting, which we do not reproduce. Low numbers are normal for GRN inference from expression alone, so being above random is what counts.
 - **Shuffled RNA does as well in the end.** With every gene shuffled across cells, which destroys all gene–gene structure, SVGRN's final output reaches 11% above random. Stage 1 does use the RNA (real beats shuffled by 4 points, 25 of 30 cells), but stage 2 removes that edge: it adds 6 points on shuffled RNA and nothing on real RNA.
-- **A rule with no network does as well.** Ranking every TF → gene edge by how highly the target gene is expressed reaches 11% above random. In this simulation, true targets are more highly expressed, and that is what SVGRN's margin reflects.
+- **A rule with no network does as well.** Ranking every TF → gene edge by how highly the target gene is expressed reaches 11% above random (vs SVGRN +0.041, t = 1.8). In this simulation true targets are more highly expressed, and SVGRN's final output does not beat that rule; whether its stage-1 signal from the RNA is regulatory cannot be separated from that here.
 - **Space adds nothing.** Stage 2 (the spatial, per-cell step) scores 7% above random against 8% for stage 1 alone, and shuffling the positions before stage 2 gives 8%. The paper's own stage-2 ablation (Supplementary Note 2, Table 1) reports only the reconstruction loss, i.e. a better expression fit, not GRN accuracy, so it does not contradict this.
 - **kScReNI does as well without space.** ScReNI's RNA-only variant reaches 9% above random, level with SVGRN.
 - **The baselines were weakened, but that does not change the picture.** CeSpGRN with the TF prior SVGRN also gets scores the same as without it (4% above random).
