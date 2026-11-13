@@ -110,3 +110,9 @@ So stage 1 does pick up signal from the RNA (real beats shuffled by 0.04). Stage
 **How.** `output/svgrn_eval/g110_c2k_n01/scores_cells.csv`, paired by cell. Pointed out by RAVEN (fact-check session); recomputed here.
 
 Also: Fig. 3's CeSpGRN value for this setting is 1.0396; our CeSpGRN-as-they-ran-it gives 1.0395. SVGRN: paper 1.1245, ours 1.069.
+
+### 2026-11-13 · Signed scoring does not explain our gap to the paper
+
+**Finding.** On g110_c2k_n01, SVGRN's AUPRC ratio is the same whether edges are ranked by signed weight (as SVGRN's eval.py) or by |weight|: published stage 2 1.0690 both, stage 1 1.0842 both (its weights stay non-negative). Only CeSpGRN moves: 1.0421 signed vs 1.0395 on |weight| (the paper's Fig. 3 value is 1.0396). So the gap between our SVGRN (1.069) and the paper's (1.1245) is not the scoring. Candidates left: the stage-2 bandwidth (released script 6, supplement 4) and which cells were scored. The paper-faithful run tests both (W = 4, 300 cells, SVGRN's eval.py; array job 13034522).
+
+**How.** `output/svgrn_eval/g110_c2k_n01/scores_cells.csv`, signed ratio = auprc_signed / (n_true / 654). Raised by RAVEN, recomputed here.
