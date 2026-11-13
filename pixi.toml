@@ -62,3 +62,51 @@ MOODS-python = ">=1.9.4"      # Exact motif p-value matching (C extension, Linux
 [target.osx-arm64.pypi-dependencies]
 scikit-misc = ">=0.1.4"       # LOESS for seurat_v3 HVG (pip on osx-arm64)
 pyfaidx = ">=0.7.0"           # Genome FASTA indexing (pure Python)
+
+[feature.svgrn]
+platforms = ["linux-64"]
+system-requirements = { cuda = "12" }
+
+[feature.svgrn.dependencies]
+python = "3.11.*"
+pytorch-gpu = ">=2.4"
+pandas = ">=2.2.3,<3"
+numpy = "*"
+scipy = "*"
+scikit-learn = ">=1.3.0"
+matplotlib = "*"     # imported by CeSpGRN's g_admm
+tqdm = "*"
+
+[feature.scmultisim]
+platforms = ["linux-64"]
+channels = ["conda-forge", "bioconda"]
+
+[feature.scmultisim.dependencies]
+r-base = "*"
+bioconductor-scmultisim = "*"   # simulated data as in SVGRN (scMultiSim_DataPrepare/)
+python = "3.11.*"
+pandas = ">=2.2.3,<3"
+numpy = "*"
+scikit-learn = ">=1.3.0"
+
+[feature.kscreni]
+platforms = ["linux-64"]
+channels = ["conda-forge", "bioconda"]
+
+[feature.kscreni.dependencies]
+r-base = "*"
+r-seurat = ">=5"                 # ScReNI's kScReNI: SNN neighbours (README pins Seurat 5.0.1)
+bioconductor-genie3 = "*"        # random forest per neighbourhood
+r-doparallel = "*"
+python = "3.11.*"
+pandas = ">=2.2.3,<3"
+numpy = "*"
+
+[environments]
+# SVGRN / CeSpGRN evaluation on simulated data. Standalone: the default
+# feature's pypi tools do not solve next to the CUDA stack.
+svgrn = { features = ["svgrn"], no-default-feature = true, solve-group = "svgrn" }
+# R + scMultiSim to regenerate SVGRN's simulated datasets (CPU only)
+scmultisim = { features = ["scmultisim"], no-default-feature = true, solve-group = "scmultisim" }
+# R + Seurat + GENIE3 to run ScReNI's kScReNI on the simulations (CPU only)
+kscreni = { features = ["kscreni"], no-default-feature = true, solve-group = "kscreni" }
