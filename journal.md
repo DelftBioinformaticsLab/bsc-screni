@@ -128,3 +128,14 @@ Also: Fig. 3's CeSpGRN value for this setting is 1.0396; our CeSpGRN-as-they-ran
 **Finding.** In g110_c2k_n01, 83.1% of each cell's 6 nearest neighbours share its GRN cluster (42.1% expected by chance). Over 400 random cells, all pairs: true-edge Jaccard 0.245 for cells within distance 3 vs 0.133 further apart; 600 distinct edges, none shared by all cells. The data are RNA only and noise-free (`sim_true_counts`). So nearby cells regulate more alike, as SVGRN assumes, but most of each cell's network is its own, and stage 2 still does not improve on stage 1.
 
 **How.** `cell_loc_GRNcluster4.csv` (kNN on x, y), `cell_specific_GRN/` (nonzero entries); edge figures from RAVEN's all-pairs check (an earlier ad-hoc check of ours on the first 400 cells gave higher, biased values and was dropped).
+
+### 2026-11-13 · The authors' shipped example outputs come from a 10-cell toy run
+
+**Finding.** The SVGRN repo ships stage-1 and stage-2 outputs (`out_stage1/exampledata_train_gpu_b5_a100/`, `out_stage2/example_data/c10_w6_b5_a100/cell1..cell10/`). Scored with SVGRN's `eval.py` they reach an AUPRC ratio of 1.198 (EPR 1.219), about 20% above random. Their `args.txt` shows they were trained on `in_sim/example_data`, which holds only 10 cells of g110_c2k_n01 (cell1–cell10, all GRN cluster 0, one corner of the tissue).
+
+- **A: rerun of the released code on the 10-cell input** (W = 6, published settings, no ground truth): AUPRC ratio 1.231, EPR 1.230 (10 cells). Our stage-1 network matches the shipped one (correlation 1.0000, max absolute difference 0.0021), and the stage-2 change has the same size (SD 0.0015–0.0031 vs shipped 0.0013–0.0028; correlation of the changes −0.02 to 0.73, median about 0.56). So the released code run through our wrapper reproduces the authors' shipped outputs: the wrapper is not the cause of our gap to the paper.
+- **B: the same 10 cells on the full 2,000-cell data** (published stage-1 model, stage 2 with W = 6 and W = 4): at or below random, AUPRC ratio 0.975 / 0.987, EPR 0.859 / 0.867. These are 10 neighbouring cells, so effectively few independent samples.
+
+So the shipped ~20% says nothing about the paper's 2,000-cell result. In the toy run the 10 scored cells are also the only training cells; why that scores high is not established.
+
+**How.** A: job 13034571, `output/svgrn_eval/example10/published/` (`stage1/RN_150.csv`, `cells/<cell>/RN_150.csv`, `paper_eval_cells.csv`), shipped scores in `example10/shipped_eval_cells.csv`. B: arrays 13034572 (W = 6) and 13034573 (W = 4), `output/svgrn_eval/g110_c2k_n01/c10_w6/` and `c10_w4/` (`paper_eval_cells.csv`). Lead from RAVEN; values checked by RAVEN.
