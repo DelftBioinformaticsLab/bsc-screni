@@ -54,6 +54,10 @@ def _compat() -> None:
 
     ag.Variable = variable
     os.environ.setdefault("TORCH_FORCE_NO_WEIGHTS_ONLY_LOAD", "1")
+    if not torch.cuda.is_available():
+        # a stage-1 model trained on a GPU must be mapped to CPU to load
+        _load = torch.load
+        torch.load = lambda f, *a, **kw: _load(f, *a, **{"map_location": "cpu", **kw})
     sys.path.insert(0, str(SVGRN_DIR))
 
 
