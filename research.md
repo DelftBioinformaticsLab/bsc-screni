@@ -9,7 +9,7 @@ Paper: Li et al., *Bioinformatics Advances* (2026), doi [10.1093/bioadv/vbag230]
 **On SVGRN's own simulation, SVGRN is 7% above random, but the same score comes from things that are not regulation or space.** One dataset so far (g110_c2k_n01, 30 cells); replicates are running.
 
 - **Above random, as in the paper.** SVGRN reaches an AUPRC ratio of 1.069 (7% above random; the paper reports 12% for this setting). Low numbers are normal for GRN inference from expression alone, so this alone would be fine.
-- **Shuffled RNA does as well.** With every gene shuffled across cells, which destroys all gene–gene structure, SVGRN reaches 11% above random.
+- **Shuffled RNA does as well in the end.** With every gene shuffled across cells, which destroys all gene–gene structure, SVGRN's final output reaches 11% above random. Stage 1 does use the RNA (real beats shuffled by 4 points, 25 of 30 cells), but stage 2 removes that edge: it adds 6 points on shuffled RNA and nothing on real RNA.
 - **A rule with no network does as well.** Ranking every TF → gene edge by how highly the target gene is expressed reaches 11% above random. In this simulation, true targets are more highly expressed, and that is what SVGRN's margin reflects.
 - **Space adds nothing.** Stage 2 (the spatial, per-cell step) scores 7% above random against 8% for stage 1 alone, and shuffling the positions before stage 2 gives 8%. The paper's own stage-2 ablation (Supplementary Note 2, Table 1) reports only the reconstruction loss, i.e. a better expression fit, not GRN accuracy, so it does not contradict this.
 - **kScReNI does as well without space.** ScReNI's RNA-only variant reaches 9% above random, level with SVGRN.
@@ -49,7 +49,7 @@ Fig. 3 of the paper: across 6 settings (110 or 160 genes × noise 0.1, 0.5, 1.0;
 | random | 1.010 ± 0.058 | 1% |
 | Pearson over all cells | 0.983 ± 0.049 | −2% |
 
-Mean ± SD over 30 target cells. Standard error of a mean ≈ 0.016, so differences under about 0.03 are noise.
+Mean ± SD over 30 target cells. Standard error of a mean ≈ 0.016, so differences under about 0.03 are noise; paired comparisons over the same cells are in the [journal](journal.md). Our CeSpGRN-as-they-ran-it (1.0395) matches the paper's Fig. 3 value for this setting (1.0396); our SVGRN is lower than the paper's (1.069 vs 1.1245).
 
 ### 2. Replicates: 6 settings regenerated with scMultiSim · running
 

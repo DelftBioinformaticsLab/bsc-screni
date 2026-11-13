@@ -69,7 +69,7 @@ SVGRN reaches 7% above random (paper: 12% for this setting). The same model on s
 
 ### 2026-11-13 · Regenerated the simulations with SVGRN's scMultiSim scripts
 
-**Finding.** `simulate.R` ports `scMultiSim_DataPrepare/g110_c2k_0.1.R` and `g160_c2k_0.1.R` (same GRN, ligand pairs, options; genes, noise and seed as parameters), `prepare_sim.py` ports `sim_prepare.py`. All 6 settings ran in 2–3 min each. Seed 0 does **not** reproduce SVGRN's downloaded files: counts, locations and cell GRNs differ (count correlation ≈ 0), with the same structure (2,000 cells, 6 TFs `2 6 10 19 80 91` for 110 genes, layers layout). The paper does not state its scMultiSim version; ours is 1.6.0. We treat the regenerated data as independent replicates with the paper's settings.
+**Finding.** `simulate.R` ports `scMultiSim_DataPrepare/g110_c2k_0.1.R` and `g160_c2k_0.1.R` (same GRN, ligand pairs, options; genes, noise and seed as parameters), `prepare_sim.py` ports `sim_prepare.py`. All 6 settings ran in 2–3 min each. Seed 0 does **not** reproduce SVGRN's downloaded files: counts, locations and cell GRNs differ (count correlation ≈ 0), with the same structure (2,000 cells, layers layout; 6 TFs `2 6 10 19 80 91` and 130 true edges per cell for 110 genes, 9 TFs `5 8 14 18 25 32 57 62 147` and 181 true edges per cell for 160 genes). The paper does not state its scMultiSim version; ours is 1.6.0. We treat the regenerated data as independent replicates with the paper's settings.
 
 **How.** `slurm/svgrn_00_simulate.sh` (`SEED=0`, array job 13034398); comparison in the session log (raw counts, `cell_loc_GRNcluster4.csv`, `cell_specific_GRN/cell7.csv`).
 
@@ -90,3 +90,23 @@ SVGRN reaches 7% above random (paper: 12% for this setting). The same model on s
 **Finding.** Supplementary Note 4: "The bandwidth parameter was set to 4 for benchmarking experiments". The released stage-2 script uses `--W 6`, which is what our runs used. We add a run with W = 4 (same stage-1 model, same targets) to check that this does not change the result.
 
 **How.** Supplement p. 3 (Note 4); `train_main_stage2_allcell.sh` (`--W 6`); `run_svgrn.py --W 4 --name published_w4`.
+
+### 2026-11-13 · Paired over cells: stage 1 uses the RNA, stage 2 pulls every run toward the per-gene ranking
+
+**Finding.** Paired differences in AUPRC ratio over the same 30 cells of g110_c2k_n01 (t = mean / SE of the differences):
+
+| comparison | difference | t | cells where first is higher |
+|---|---|---|---|
+| SVGRN stage 1, real − shuffled RNA | +0.040 | 3.5 | 25/30 |
+| shuffled RNA, stage 2 − stage 1 | +0.063 | 3.9 | 21/30 |
+| real RNA, stage 2 − stage 1 | −0.015 | −1.5 | 15/30 |
+| stage 2, shuffled − real RNA | +0.038 | 5.1 | 24/30 |
+| SVGRN published − random | +0.059 | 3.1 | 21/30 |
+| kScReNI − SVGRN published | +0.019 | 0.8 | 18/30 |
+| target gene mean − SVGRN published | +0.041 | 1.8 | 22/30 |
+
+So stage 1 does pick up signal from the RNA (real beats shuffled by 0.04). Stage 2 then removes that edge: on shuffled RNA it adds 0.06, on real RNA nothing, and after stage 2 the shuffled-RNA run is ahead. "Shuffled RNA does as well" holds for the final (stage-2) output, not for stage 1. SVGRN is reliably above random (t = 3.1). kScReNI and SVGRN are not distinguishable (t = 0.8).
+
+**How.** `output/svgrn_eval/g110_c2k_n01/scores_cells.csv`, paired by cell. Pointed out by RAVEN (fact-check session); recomputed here.
+
+Also: Fig. 3's CeSpGRN value for this setting is 1.0396; our CeSpGRN-as-they-ran-it gives 1.0395. SVGRN: paper 1.1245, ours 1.069.
