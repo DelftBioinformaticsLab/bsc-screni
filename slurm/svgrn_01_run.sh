@@ -10,7 +10,7 @@
 #SBATCH --gres=gpu:1
 
 # One dataset: pick target cells, run SVGRN (published, then the controls),
-# the simple baselines, and score everything.
+# the simple baselines and CeSpGRN (CESPGRN=0 skips it), and score everything.
 #   DS=g110_c2k_n01 N_TARGETS=40 VARIANTS="published shuffle_pos shuffle_rna" sbatch slurm/svgrn_01_run.sh
 source slurm/svgrn_env.sh
 N_TARGETS="${N_TARGETS:-40}"
@@ -23,6 +23,11 @@ _, meta, _, _ = c.load(Path('$SIM/$DS'))
 Path('$OUT/targets.txt').write_text('\n'.join(c.sample_targets(meta, $N_TARGETS)) + '\n')"
 echo "targets: $(wc -l < "$OUT/targets.txt")"
 sv python -u scripts/svgrn_eval/baselines.py --data "$SIM/$DS" --targets "$OUT/targets.txt" --out "$OUT"
+if [ "${CESPGRN:-1}" = 1 ]; then
+  sv python -u scripts/svgrn_eval/run_cespgrn.py --data "$SIM/$DS" --targets "$OUT/targets.txt" \
+    --out "$OUT" > "$OUT/log_cespgrn.txt" 2>&1 || { echo "cespgrn failed:"; tail -20 "$OUT/log_cespgrn.txt"; }
+  grep -E "^(svgrn_setup|tf_avg)|Traceback|Error" "$OUT/log_cespgrn.txt" | tail -12
+fi
 for v in $VARIANTS; do
   sv python -u scripts/svgrn_eval/run_svgrn.py --data "$SIM/$DS" --targets "$OUT/targets.txt" \
     --out "$OUT" --variant "$v" > "$OUT/log_$v.txt" 2>&1 || { echo "variant $v failed:"; tail -20 "$OUT/log_$v.txt"; }
