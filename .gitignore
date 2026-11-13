@@ -12,3 +12,5 @@
 *.egg-info
 
 __pycache__/
+# slurm logs
+/slurm/out/

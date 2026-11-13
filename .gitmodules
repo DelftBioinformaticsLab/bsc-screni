@@ -1,0 +1,6 @@
+[submodule "external/SVGRN"]
+	path = external/SVGRN
+	url = https://github.com/lyrrrr/SVGRN.git
+[submodule "external/CeSpGRN"]
+	path = external/CeSpGRN
+	url = https://github.com/PeterZZQ/CeSpGRN.git
