@@ -60,6 +60,9 @@ def evaluate(method: str, query: ad.AnnData, ref: ad.AnnData, args, device: str)
                             epochs_tangram=args.epochs_tangram, seed=args.seed, device=device)
     out = mp.readout(M, q, ref, [d.SECTION, d.SUBCLASS, DEPTH])
     hit = out["mapped_section"].to_numpy() == true_sec
+    out2 = mp.readout(M, q, ref, [d.SECTION], section_by="mass")
+    hit2 = out2["mapped_section"].to_numpy() == true_sec
+    err2 = np.linalg.norm(out2[["x", "y"]].to_numpy() - true_xy, axis=1)
     err = np.linalg.norm(out[["x", "y"]].to_numpy() - true_xy, axis=1)
     # depth part of the error (distance from pia, µm) and the rest, which runs
     # along the cortical sheet: err^2 = depth^2 + along^2 (approximately)
@@ -71,6 +74,9 @@ def evaluate(method: str, query: ad.AnnData, ref: ad.AnnData, args, device: str)
                          "depth_error_um": np.where(hit, derr, np.nan),
                          "along_error_um": np.where(hit, along, np.nan),
                          "subclass_correct": out["mapped_subclass"].to_numpy() == q.obs[d.SUBCLASS].to_numpy(),
+                         # same matrix, section picked by mean probability first
+                         "section_correct_mass": hit2,
+                         "error_um_mass": np.where(hit2, err2, np.nan),
                          "seconds_total": secs,
                          "true_x": true_xy[:, 0], "true_y": true_xy[:, 1],
                          "mapped_x": out["x"].to_numpy(), "mapped_y": out["y"].to_numpy(),
@@ -108,6 +114,9 @@ def summarise(cells: pd.DataFrame) -> pd.DataFrame:
             "median_depth_um": g["depth_error_um"].median() if "depth_error_um" in g else np.nan,
             "median_along_um": g["along_error_um"].median() if "along_error_um" in g else np.nan,
             "subclass_acc_pct": 100 * g["subclass_correct"].mean() if "subclass_correct" in g else np.nan,
+            "section_acc_mass_pct": 100 * g["section_correct_mass"].mean()
+            if "section_correct_mass" in g else np.nan,
+            "median_um_mass": g["error_um_mass"].median() if "error_um_mass" in g else np.nan,
             "pearson_x": rx, "pearson_y": ry,
             "r2_x": rx ** 2, "r2_y": ry ** 2,
         })

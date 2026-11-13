@@ -236,10 +236,38 @@ def run_method(method: str, sc_a: ad.AnnData, sp_a: ad.AnnData, *, k_sp: int = 7
     return M, time.time() - t0
 
 
+def pick_cells(M: np.ndarray, sections: np.ndarray | None = None) -> np.ndarray:
+    """Index of the chosen MERFISH cell per nucleus.
+
+    sections=None: plain argmax over all cells. With section labels: first pick
+    the section with the highest mean probability per cell (mean, not sum, so
+    big sections are not favoured), then the argmax cell within that section.
+    """
+    if sections is None:
+        return M.argmax(axis=1)
+    labels = np.unique(sections)
+    masks = [sections == s for s in labels]
+    mass = np.stack([M[:, m].mean(axis=1) for m in masks], axis=1)
+    best = mass.argmax(axis=1)
+    idx = np.empty(M.shape[0], dtype=np.int64)
+    for k, m in enumerate(masks):
+        rows = np.flatnonzero(best == k)
+        if len(rows):
+            cols = np.flatnonzero(m)
+            idx[rows] = cols[M[np.ix_(rows, cols)].argmax(axis=1)]
+    return idx
+
+
 def readout(M: np.ndarray, sc_a: ad.AnnData, sp_a: ad.AnnData,
-            carry: list[str]) -> pd.DataFrame:
-    """Argmax readout: each nucleus takes its top MERFISH cell's position."""
-    idx = M.argmax(axis=1)
+            carry: list[str], section_by: str = "argmax",
+            section_col: str = "Section") -> pd.DataFrame:
+    """Each nucleus takes the position of one MERFISH cell.
+
+    section_by='argmax': the single best cell over all sections.
+    section_by='mass': the section with the highest mean probability first,
+    then the best cell within it (see ``pick_cells``).
+    """
+    idx = pick_cells(M, sp_a.obs[section_col].to_numpy() if section_by == "mass" else None)
     xy = np.asarray(sp_a.obsm.get("spatial_orig", sp_a.obsm["spatial"]))[idx]
     out = pd.DataFrame({
         "x": xy[:, 0],
