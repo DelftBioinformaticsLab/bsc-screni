@@ -18,7 +18,6 @@ from pathlib import Path
 
 import numpy as np
 import pandas as pd
-from sklearn.metrics import average_precision_score, roc_auc_score
 
 INPUT_CSV = "expression_loc_cluster_wlayout.csv"
 NON_GENE_COLS = ["x", "y", "ClusterID"]
@@ -65,6 +64,8 @@ def score(pred: np.ndarray, T: np.ndarray, mask: np.ndarray) -> dict:
     top-k |weights| (k = number of true edges); epr divides by the random
     expectation, so 1 = random.
     """
+    from sklearn.metrics import average_precision_score, roc_auc_score  # only scoring needs it
+
     y, s = T[mask].astype(int), pred[mask].astype(float)
     a = np.abs(s)
     k = int(y.sum())
