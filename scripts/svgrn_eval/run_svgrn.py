@@ -82,6 +82,9 @@ def main() -> None:
     p.add_argument("--max-targets", type=int, default=None)
     p.add_argument("--seed", type=int, default=0)
     p.add_argument("--epochs", type=int, default=150, help="Published: 150. Lower only for smoke tests")
+    p.add_argument("--W", type=float, default=6,
+                   help="Stage-2 RBF bandwidth. Released script: 6; supplement Note 4: 4 for benchmarks")
+    p.add_argument("--name", default=None, help="Output folder name (default: the variant)")
     args = p.parse_args()
     _compat()
     from src.SVGRN_allcell import non_celltype_GRN_model  # noqa: E402
@@ -90,7 +93,7 @@ def main() -> None:
     torch.manual_seed(args.seed)
     np.random.seed(args.seed)
     rng = np.random.default_rng(args.seed)
-    out = args.out / args.variant
+    out = args.out / (args.name or args.variant)
     out.mkdir(parents=True, exist_ok=True)
     targets = args.targets.read_text().split()[: args.max_targets]
 
@@ -107,20 +110,21 @@ def main() -> None:
     tf_file.write_text("\n".join(tfs) + "\n")
 
     # stage 1 (shuffle_pos reuses the published stage-1 model)
-    if args.variant == "shuffle_pos":
+    if args.variant == "shuffle_pos" or (args.variant == "published" and args.name):
         stage1_dir = args.out / "published" / "stage1"
         if not (stage1_dir / "stage1.pt").exists():
-            raise SystemExit("shuffle_pos needs the published stage-1 model; run --variant published first")
-        pos = df[["x", "y"]].to_numpy()
-        df[["x", "y"]] = pos[rng.permutation(len(df))]
-        df.to_csv(data_csv)
+            raise SystemExit("this run reuses the published stage-1 model; run --variant published first")
+        if args.variant == "shuffle_pos":
+            pos = df[["x", "y"]].to_numpy()
+            df[["x", "y"]] = pos[rng.permutation(len(df))]
+            df.to_csv(data_csv)
     else:
         stage1_dir = out / "stage1"
         t0 = time.time()
         non_celltype_GRN_model(_opt(n_epochs=args.epochs, data_file=str(data_csv), tf_list=str(tf_file),
                                     save_name=str(stage1_dir))).train_model()
         print(f"stage 1: {time.time() - t0:.0f} s", flush=True)
-    if args.variant != "shuffle_pos":  # same stage 1 as published
+    if stage1_dir == out / "stage1":  # otherwise the same stage 1 as published
         s1 = _rn_to_sender_receiver(stage1_dir / f"RN_{args.epochs}.csv")
         c.save_preds(out / "preds_stage1.npz", {t: s1 for t in targets})
 
@@ -132,7 +136,7 @@ def main() -> None:
         if not rn.exists():
             cell_dir.mkdir(parents=True, exist_ok=True)  # SVGRN only creates the last level
             t0 = time.time()
-            SC_GRN_model(_opt(n_epochs=args.epochs, data_file=str(data_csv), model_file=str(stage1_dir / "stage1.pt"),
+            SC_GRN_model(_opt(n_epochs=args.epochs, W=args.W, data_file=str(data_csv), model_file=str(stage1_dir / "stage1.pt"),
                               target_cell_name=cell, save_name=str(cell_dir))).train_model()
             times.append(time.time() - t0)
             print(f"stage 2 {i + 1}/{len(targets)} {cell}: {times[-1]:.0f} s", flush=True)

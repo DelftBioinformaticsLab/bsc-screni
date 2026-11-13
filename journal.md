@@ -78,3 +78,15 @@ SVGRN reaches 7% above random (paper: 12% for this setting). The same model on s
 **Finding.** ScReNI's kScReNI is RNA-only: for each cell, its 20 nearest neighbours on Seurat's SNN graph (expression PCA, not space), then GENIE3 (100 trees) on those 21 cells, input the raw counts. Run unmodified on all cells (2,000 cells in 1.1 min on 16 CPUs); the target cells are scored like the other methods. On g110_c2k_n01: AUPRC ratio 1.088 ± 0.088 (9% above random), AUROC 0.511, EPR 1.087. That is level with SVGRN (7%) within noise, with no spatial information and no GPU, and still below the no-network rule (11%).
 
 **How.** `external/ScReNI/R/Infer_kScReNI_scNetworks.R`; `scripts/svgrn_eval/run_kscreni.R`, `slurm/svgrn_02_kscreni.sh` (job 13034419 on g110_c2k_n01; jobs 13034429–13034461 on the regenerated datasets).
+
+### 2026-11-13 · The paper's stage-2 ablation measures expression fit, not GRN accuracy
+
+**Finding.** Supplementary Note 2 and Table 1 are the paper's only evidence that stage 2 helps. They report the reconstruction loss, not EPR or AUPRC: g110 noise 0.1, 1.4846 with neither stage-2 component → 1.2652 with both; noise 0.5, 1.8651 → 1.6961. A better expression fit around the target does not mean a better GRN, so it does not contradict our result that stage 2 does not improve GRN accuracy (7% vs 8% above random for stage 1). The losses are also not on the same footing: the kernel-weighted loss (`weighted_reconstruction_loss`) reweights cells toward the target's neighbours, which stage 2 is fitted to.
+
+**How.** Supplement `SVGRN_Supplementary_Material_Clean.pdf` p. 2–3 (Note 2, Table 1); `src/Con_Model_newED.py:31-42`. Raised by PHOENIX from the supplement; checked against the PDF.
+
+### 2026-11-13 · The supplement's bandwidth differs from the released script
+
+**Finding.** Supplementary Note 4: "The bandwidth parameter was set to 4 for benchmarking experiments". The released stage-2 script uses `--W 6`, which is what our runs used. We add a run with W = 4 (same stage-1 model, same targets) to check that this does not change the result.
+
+**How.** Supplement p. 3 (Note 4); `train_main_stage2_allcell.sh` (`--W 6`); `run_svgrn.py --W 4 --name published_w4`.
