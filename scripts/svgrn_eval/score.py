@@ -42,7 +42,7 @@ def main() -> None:
     cells = pd.DataFrame(rows)
     cells.to_csv(args.out / "scores_cells.csv", index=False)
 
-    metrics = ["auprc_ratio", "auroc", "epr", "auprc_signed"]
+    metrics = ["auprc_ratio", "auprc_ratio_signed", "auroc", "epr", "auprc_signed"]
     summ = cells.groupby("method")[metrics].agg(["mean", "std"])
     summ.columns = [f"{m}_{s}" for m, s in summ.columns]
     summ.insert(0, "n_cells", cells.groupby("method").size())

@@ -85,6 +85,10 @@ def main() -> None:
     p.add_argument("--W", type=float, default=6,
                    help="Stage-2 RBF bandwidth. Released script: 6; supplement Note 4: 4 for benchmarks")
     p.add_argument("--name", default=None, help="Output folder name (default: the variant)")
+    p.add_argument("--chunk", type=int, default=None,
+                   help="Only run targets chunk i of --n-chunks (array jobs); preds are then not "
+                        "collected: rerun without --chunk afterwards to collect (no retraining)")
+    p.add_argument("--n-chunks", type=int, default=1)
     args = p.parse_args()
     _compat()
     from src.SVGRN_allcell import non_celltype_GRN_model  # noqa: E402
@@ -104,9 +108,10 @@ def main() -> None:
     if args.variant == "shuffle_rna":
         for g in genes:
             df[g] = rng.permutation(df[g].to_numpy())
-    data_csv = out / "input.csv"
+    # one input file per array task, so parallel chunks never read a half-written file
+    data_csv = out / ("input.csv" if args.chunk is None else f"input_chunk{args.chunk}.csv")
     df.to_csv(data_csv)
-    tf_file = out / "tf_list.txt"
+    tf_file = out / ("tf_list.txt" if args.chunk is None else f"tf_list_chunk{args.chunk}.txt")
     tf_file.write_text("\n".join(tfs) + "\n")
 
     # stage 1 (shuffle_pos reuses the published stage-1 model)
@@ -129,8 +134,9 @@ def main() -> None:
         c.save_preds(out / "preds_stage1.npz", {t: s1 for t in targets})
 
     # stage 2, one fine-tune per target cell
+    run_targets = targets if args.chunk is None else targets[args.chunk::args.n_chunks]
     preds, times = {}, []
-    for i, cell in enumerate(targets):
+    for i, cell in enumerate(run_targets):
         cell_dir = out / "cells" / cell
         rn = cell_dir / f"RN_{args.epochs}.csv"
         if not rn.exists():
@@ -139,9 +145,10 @@ def main() -> None:
             SC_GRN_model(_opt(n_epochs=args.epochs, W=args.W, data_file=str(data_csv), model_file=str(stage1_dir / "stage1.pt"),
                               target_cell_name=cell, save_name=str(cell_dir))).train_model()
             times.append(time.time() - t0)
-            print(f"stage 2 {i + 1}/{len(targets)} {cell}: {times[-1]:.0f} s", flush=True)
+            print(f"stage 2 {i + 1}/{len(run_targets)} {cell}: {times[-1]:.0f} s", flush=True)
         preds[cell] = _rn_to_sender_receiver(rn)
-    c.save_preds(out / "preds_stage2.npz", preds)
+    if args.chunk is None:
+        c.save_preds(out / "preds_stage2.npz", preds)
     if times:
         print(f"stage 2: {len(times)} cells, median {np.median(times):.0f} s per cell", flush=True)
 

@@ -79,6 +79,7 @@ def score(pred: np.ndarray, T: np.ndarray, mask: np.ndarray) -> dict:
         "auprc_ratio": average_precision_score(y, a) / prevalence,
         "auroc": roc_auc_score(y, a),
         "auprc_signed": average_precision_score(y, s),
+        "auprc_ratio_signed": average_precision_score(y, s) / prevalence,  # SVGRN eval.py's AUPRC ratio
         "ep": ep,
         "epr": ep / prevalence,
         "n_true": k,
