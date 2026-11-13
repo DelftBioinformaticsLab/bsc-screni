@@ -11,7 +11,7 @@ Paper: Li et al., *Bioinformatics Advances* (2026), doi [10.1093/bioadv/vbag230]
 - **Above random, as in the paper.** SVGRN reaches an AUPRC ratio of 1.069 (7% above random; the paper reports 12% for this setting). Low numbers are normal for GRN inference from expression alone, so this alone would be fine.
 - **Shuffled RNA does as well.** With every gene shuffled across cells, which destroys all gene–gene structure, SVGRN reaches 11% above random.
 - **A rule with no network does as well.** Ranking every TF → gene edge by how highly the target gene is expressed reaches 11% above random. In this simulation, true targets are more highly expressed, and that is what SVGRN's margin reflects.
-- **Space adds nothing.** Stage 2 (the spatial, per-cell step) scores 7% above random against 8% for stage 1 alone, and shuffling the positions before stage 2 gives 8%.
+- **Space adds nothing.** Stage 2 (the spatial, per-cell step) scores 7% above random against 8% for stage 1 alone, and shuffling the positions before stage 2 gives 8%. The paper's own stage-2 ablation (Supplementary Note 2, Table 1) reports only the reconstruction loss, i.e. a better expression fit, not GRN accuracy, so it does not contradict this.
 - **kScReNI does as well without space.** ScReNI's RNA-only variant reaches 9% above random, level with SVGRN.
 - **The baselines were weakened, but that does not change the picture.** CeSpGRN with the TF prior SVGRN also gets scores the same as without it (4% above random).
 
@@ -79,3 +79,4 @@ ScReNI's RNA-only variant: 20 expression neighbours per cell, GENIE3 on those 21
 - 30 target cells per dataset, not all 2,000.
 - Simulated data only. These simulations may hold little recoverable network signal for any method (Pearson over all cells is below random), so they cannot show that a method works on real tissue, only whether the paper's claim holds on its own benchmark.
 - Our CeSpGRN kernel stands in for the unpublished `calc_kernel_distance`.
+- The released stage-2 script uses bandwidth W = 6; the supplement says 4 for benchmarks. Our main runs use 6; a W = 4 run on g110_c2k_n01 checks the difference (job 13034485).
