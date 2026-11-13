@@ -16,12 +16,9 @@ source slurm/svgrn_env.sh
 N_TARGETS="${N_TARGETS:-40}"
 VARIANTS="${VARIANTS:-published shuffle_pos shuffle_rna}"
 mkdir -p "$OUT"
-[ -f "$OUT/targets.txt" ] || sv python -c "
-import sys; sys.path.insert(0, 'scripts/svgrn_eval'); import common as c
-from pathlib import Path
-_, meta, _, _ = c.load(Path('$SIM/$DS'))
-Path('$OUT/targets.txt').write_text('\n'.join(c.sample_targets(meta, $N_TARGETS)) + '\n')"
+[ -f "$OUT/targets.txt" ] || sv python scripts/svgrn_eval/make_targets.py --data "$SIM/$DS" --n "$N_TARGETS" --out "$OUT/targets.txt"
 echo "targets: $(wc -l < "$OUT/targets.txt")"
+[ -s "$OUT/targets.txt" ] || { echo "no targets"; exit 1; }
 sv python -u scripts/svgrn_eval/baselines.py --data "$SIM/$DS" --targets "$OUT/targets.txt" --out "$OUT"
 if [ "${CESPGRN:-1}" = 1 ]; then
   sv python -u scripts/svgrn_eval/run_cespgrn.py --data "$SIM/$DS" --targets "$OUT/targets.txt" \
