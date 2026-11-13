@@ -5,6 +5,10 @@
     pearson_local   Pearson correlation weighted by the same RBF kernel SVGRN's
                     stage 2 uses (sigma = W = 6 in the raw coordinates), so it
                     sees the same neighbourhood as SVGRN
+    target_mean     no gene-gene information at all: every TF -> gene edge
+    target_var      scores the target gene's mean (or variance) over all cells.
+                    Survives shuffling each gene across cells, so it tests
+                    whether a score comes from per-gene properties alone.
 
 All are scored on the same TF -> gene pairs as SVGRN, so they get the same TF
 prior. Writes <out>/baselines/preds_<method>.npz.
@@ -54,13 +58,19 @@ def main() -> None:
     rng = np.random.default_rng(args.seed)
     g = weighted_corr(X, np.ones(len(X)))
 
-    preds = {"random": {}, "pearson_global": {}, "pearson_local": {}}
+    preds = {"random": {}, "pearson_global": {}, "pearson_local": {},
+             "target_mean": {}, "target_var": {}}
+    n = len(genes)
+    by_mean = np.tile(X.mean(0), (n, 1))  # row = sender, column = target
+    by_var = np.tile(X.var(0), (n, 1))
     for t in targets:
         d2 = ((xy - xy[pos[t]]) ** 2).sum(1)
         w = np.exp(-d2 / (2 * args.sigma ** 2))
         preds["random"][t] = rng.random((len(genes), len(genes)))
         preds["pearson_global"][t] = g
         preds["pearson_local"][t] = weighted_corr(X, w)
+        preds["target_mean"][t] = by_mean
+        preds["target_var"][t] = by_var
     for m, d in preds.items():
         c.save_preds(args.out / "baselines" / f"preds_{m}.npz", d)
     print(f"baselines for {len(targets)} targets written to {args.out / 'baselines'}")
