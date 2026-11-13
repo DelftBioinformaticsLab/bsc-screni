@@ -18,7 +18,8 @@ for the targets only, with CeSpGRN's own weighted Kendall tau.
 
 Writes <out>/cespgrn/preds_{svgrn_setup,tf_avg}.npz (sender x receiver,
 edge weight = CeSpGRN's partial correlation, the matrices train() returns).
-CeSpGRN's PSD helpers use torch.eig, removed in torch 2, so the PSD check and
+CeSpGRN's PSD helpers use torch.eig, removed in torch 2 (as is torch.cholesky,
+shimmed to torch.linalg.cholesky), so the PSD check and
 correction are redone here with torch.linalg.eigh (same rule: eigenvalues
 <= 0 set to 1e-3).
 
@@ -43,6 +44,8 @@ from scipy.spatial.distance import cdist
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import common as c  # noqa: E402
 
+# torch.cholesky was removed in torch 2; CeSpGRN's ADMM loop still calls it.
+torch.cholesky = lambda A, upper=False: torch.linalg.cholesky(A, upper=upper)
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "external" / "CeSpGRN" / "src"))
 import g_admm as CeSpGRN  # noqa: E402
 
